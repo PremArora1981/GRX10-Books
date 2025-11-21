@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, FileText, Briefcase, Upload, MessageSquare, PieChart, Settings, Landmark, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, Briefcase, Upload, MessageSquare, PieChart, Settings, Landmark, LogOut, FileStack } from 'lucide-react';
 import { View } from '../types';
 
 interface SidebarProps {
@@ -12,6 +12,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) => {
     { id: View.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
     { id: View.INVOICES, label: 'Sales & Invoices', icon: FileText },
     { id: View.BANKING, label: 'Banking', icon: Landmark },
+    { id: View.DOCUMENTS, label: 'Documents', icon: FileStack },
     { id: View.REPORTS, label: 'Reports', icon: PieChart },
     { id: View.MIGRATION, label: 'Zoho Migration', icon: Upload },
     { id: View.ASSISTANT, label: 'AI Assistant', icon: MessageSquare },

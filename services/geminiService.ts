@@ -139,4 +139,26 @@ export class GeminiService {
       return "I'm having trouble connecting to the financial brain right now. Please ensure the API Key is valid.";
     }
   }
+
+  async parseDocument(base64Data: string, mimeType: string): Promise<any> {
+    const model = this.ai.models;
+    try {
+        const result = await model.generateContent({
+            model: this.modelId,
+            contents: {
+                parts: [
+                    { inlineData: { data: base64Data, mimeType } },
+                    { text: "Analyze this image. Identify if it is a financial document (invoice, receipt, bill). Extract the following fields: vendor_name, invoice_date (YYYY-MM-DD), total_amount (number), gst_amount (number). Return a JSON object with these keys. If a field is not found, use null." }
+                ]
+            },
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+        return JSON.parse(result.text || "{}");
+    } catch (e) {
+        console.error("OCR Failed", e);
+        throw e;
+    }
+  }
 }

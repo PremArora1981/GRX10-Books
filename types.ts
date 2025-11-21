@@ -52,11 +52,28 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+export interface DocumentItem {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  uploadDate: string;
+  base64?: string; // Stored for demo purposes to send to API
+  ocrStatus: 'idle' | 'processing' | 'completed' | 'failed';
+  extractedData?: {
+    vendor_name?: string;
+    invoice_date?: string;
+    total_amount?: number;
+    gst_amount?: number;
+  };
+}
+
 export enum View {
   DASHBOARD = 'DASHBOARD',
   INVOICES = 'INVOICES',
   BANKING = 'BANKING',
   MIGRATION = 'MIGRATION',
   ASSISTANT = 'ASSISTANT',
-  REPORTS = 'REPORTS'
+  REPORTS = 'REPORTS',
+  DOCUMENTS = 'DOCUMENTS'
 }

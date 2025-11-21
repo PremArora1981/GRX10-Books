@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Invoices from './pages/Invoices';
 import Migration from './pages/Migration';
 import AiAssistant from './pages/AiAssistant';
+import Documents from './pages/Documents';
 import { View, Invoice } from './types';
 import { MOCK_INVOICES } from './constants';
 
@@ -27,6 +28,8 @@ const App: React.FC = () => {
         return <Migration onImport={handleImport} />;
       case View.ASSISTANT:
         return <AiAssistant invoices={invoices} />;
+      case View.DOCUMENTS:
+        return <Documents />;
       case View.BANKING:
       case View.REPORTS:
         return (
