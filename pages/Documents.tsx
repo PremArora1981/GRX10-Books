@@ -1,9 +1,8 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, FileText, ScanLine, Trash2, CheckCircle, AlertCircle, Loader2, 
   FileImage, Info, LayoutTemplate, PenTool, BookOpen, Send, 
-  MoreHorizontal, Check, Clock, Eye
+  Check, Clock, Eye, X, RefreshCw
 } from 'lucide-react';
 import { DocumentItem, Agreement, InvoiceTemplate } from '../types';
 import { GeminiService } from '../services/geminiService';
@@ -11,25 +10,35 @@ import { GeminiService } from '../services/geminiService';
 type Tab = 'uploads' | 'templates' | 'agreements' | 'msa';
 
 const MOCK_TEMPLATES: InvoiceTemplate[] = [
-  { id: 't1', name: 'Professional GST Standard', thumbnailColor: 'bg-slate-200', tags: ['Professional', 'GST Compliant'] },
-  { id: 't2', name: 'Creative Digital', thumbnailColor: 'bg-indigo-100', tags: ['Modern', 'Freelancer'] },
-  { id: 't3', name: 'Corporate Blue', thumbnailColor: 'bg-blue-100', tags: ['Corporate', 'Clean'] },
-  { id: 't4', name: 'Minimalist Mono', thumbnailColor: 'bg-gray-100', tags: ['Simple', 'B&W'] },
+  { id: 'Professional GST Standard', name: 'Professional GST Standard', thumbnailColor: 'bg-slate-200', tags: ['Professional', 'GST Compliant'] },
+  { id: 'Creative Digital', name: 'Creative Digital', thumbnailColor: 'bg-indigo-100', tags: ['Modern', 'Freelancer'] },
+  { id: 'Corporate Blue', name: 'Corporate Blue', thumbnailColor: 'bg-blue-100', tags: ['Corporate', 'Clean'] },
+  { id: 'Minimalist Mono', name: 'Minimalist Mono', thumbnailColor: 'bg-gray-100', tags: ['Simple', 'B&W'] },
 ];
 
-const MOCK_AGREEMENTS: Agreement[] = [
+const INITIAL_AGREEMENTS: Agreement[] = [
   { id: 'a1', customerName: 'TechFlow India Pvt Ltd', type: 'MSA', sentDate: '2024-05-10', status: 'Signed', lastActivity: 'Signed on 12 May' },
   { id: 'a2', customerName: 'Reddy Enterprises', type: 'Service Contract', sentDate: '2024-05-14', status: 'Viewed', lastActivity: 'Viewed 2 hours ago' },
   { id: 'a3', customerName: 'Global Exports Ltd', type: 'NDA', sentDate: '2024-05-15', status: 'Sent', lastActivity: 'Sent yesterday' },
 ];
 
-const Documents: React.FC = () => {
+interface DocumentsProps {
+  onUseTemplate?: (templateId: string) => void;
+}
+
+const Documents: React.FC<DocumentsProps> = ({ onUseTemplate }) => {
   const [activeTab, setActiveTab] = useState<Tab>('uploads');
   
   // --- OCR Logic ---
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const geminiRef = useRef<GeminiService | null>(null);
+
+  // --- Agreements Logic ---
+  const [agreements, setAgreements] = useState<Agreement[]>(INITIAL_AGREEMENTS);
+  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [sendForm, setSendForm] = useState({ customerName: '', email: '', type: 'MSA' });
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
     if (!geminiRef.current) {
@@ -121,6 +130,40 @@ const Documents: React.FC = () => {
   const formatCurrency = (val?: number) => {
     if (val === undefined || val === null) return '-';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
+  };
+
+  // --- Agreement Handlers ---
+
+  const handleSendAgreement = () => {
+    if (!sendForm.customerName || !sendForm.email) return;
+    
+    setIsSending(true);
+    
+    // Mock API call delay
+    setTimeout(() => {
+      const newAgreement: Agreement = {
+        id: Math.random().toString(36).substring(2, 9),
+        customerName: sendForm.customerName,
+        type: sendForm.type as any,
+        sentDate: new Date().toISOString().split('T')[0],
+        status: 'Sent',
+        lastActivity: 'Sent via email just now'
+      };
+      
+      setAgreements(prev => [newAgreement, ...prev]);
+      setIsSending(false);
+      setIsSendModalOpen(false);
+      setSendForm({ customerName: '', email: '', type: 'MSA' });
+    }, 1500);
+  };
+
+  const simulateProgress = (id: string) => {
+    setAgreements(prev => prev.map(a => {
+      if (a.id !== id) return a;
+      if (a.status === 'Sent') return { ...a, status: 'Viewed', lastActivity: 'Viewed just now' };
+      if (a.status === 'Viewed') return { ...a, status: 'Signed', lastActivity: 'Signed just now' };
+      return a;
+    }));
   };
 
   // --- Render Functions ---
@@ -229,7 +272,12 @@ const Documents: React.FC = () => {
              <div className={`h-48 ${template.thumbnailColor} w-full flex items-center justify-center relative`}>
                 <LayoutTemplate className="text-slate-400 opacity-50" size={48} />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors flex items-center justify-center">
-                   <button className="bg-white text-slate-800 px-4 py-2 rounded-full text-sm font-medium shadow-lg opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all">Use Template</button>
+                   <button 
+                     onClick={() => onUseTemplate?.(template.id)}
+                     className="bg-white text-slate-800 px-4 py-2 rounded-full text-sm font-medium shadow-lg opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all hover:bg-emerald-600 hover:text-white"
+                   >
+                     Use Template
+                   </button>
                 </div>
              </div>
              <div className="p-4">
@@ -247,10 +295,68 @@ const Documents: React.FC = () => {
   );
 
   const renderAgreements = () => (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative">
+      
+      {/* Send Modal */}
+      {isSendModalOpen && (
+         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-scale-in">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-slate-800">Send Agreement</h3>
+                    <button onClick={() => setIsSendModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                </div>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Customer Name</label>
+                        <input 
+                            type="text" 
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="e.g. TechFlow India"
+                            value={sendForm.customerName}
+                            onChange={e => setSendForm({...sendForm, customerName: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Recipient Email</label>
+                        <input 
+                            type="email" 
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="signer@company.com"
+                            value={sendForm.email}
+                            onChange={e => setSendForm({...sendForm, email: e.target.value})}
+                        />
+                    </div>
+                     <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Agreement Type</label>
+                        <select 
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                            value={sendForm.type}
+                            onChange={e => setSendForm({...sendForm, type: e.target.value})}
+                        >
+                            <option value="MSA">Master Services Agreement (MSA)</option>
+                            <option value="NDA">Non-Disclosure Agreement (NDA)</option>
+                            <option value="Service Contract">Service Contract</option>
+                        </select>
+                    </div>
+                    <button 
+                        onClick={handleSendAgreement}
+                        disabled={isSending || !sendForm.customerName || !sendForm.email}
+                        className="w-full bg-indigo-600 text-white rounded-lg py-2.5 font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+                    >
+                        {isSending ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                        {isSending ? 'Sending...' : 'Send for Signature'}
+                    </button>
+                </div>
+            </div>
+         </div>
+       )}
+
       <div className="flex justify-between items-center">
          <p className="text-sm text-slate-600">Manage e-signatures and contracts sent to customers.</p>
-         <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors">
+         <button 
+            onClick={() => setIsSendModalOpen(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200"
+         >
            <Send size={16} /> Send New Agreement
          </button>
       </div>
@@ -264,11 +370,11 @@ const Documents: React.FC = () => {
               <th className="px-6 py-4">Sent Date</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Activity</th>
-              <th className="px-6 py-4">Action</th>
+              <th className="px-6 py-4 text-center">Simulation</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {MOCK_AGREEMENTS.map((agreement) => (
+            {agreements.map((agreement) => (
               <tr key={agreement.id} className="hover:bg-slate-50">
                 <td className="px-6 py-4 font-medium text-slate-800">{agreement.customerName}</td>
                 <td className="px-6 py-4 text-slate-600">{agreement.type}</td>
@@ -285,8 +391,15 @@ const Documents: React.FC = () => {
                    </span>
                 </td>
                 <td className="px-6 py-4 text-slate-500 text-xs">{agreement.lastActivity}</td>
-                <td className="px-6 py-4">
-                   <button className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={16}/></button>
+                <td className="px-6 py-4 text-center">
+                   <button 
+                     onClick={() => simulateProgress(agreement.id)}
+                     disabled={agreement.status === 'Signed'}
+                     className="text-indigo-600 hover:bg-indigo-50 p-2 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                     title="Simulate Customer Action"
+                   >
+                      <RefreshCw size={16} className={agreement.status === 'Signed' ? '' : ''} />
+                   </button>
                 </td>
               </tr>
             ))}
@@ -303,7 +416,10 @@ const Documents: React.FC = () => {
            <h1 className="text-2xl font-bold text-slate-900">Master Services Agreement</h1>
            <p className="text-slate-500 text-sm mt-1">Reference Version 1.4 • Updated Jan 2024</p>
          </div>
-         <button className="text-indigo-600 text-sm font-medium border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-50">
+         <button 
+           onClick={() => window.print()}
+           className="text-indigo-600 text-sm font-medium border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-50"
+         >
             Download PDF
          </button>
       </div>
@@ -319,7 +435,11 @@ const Documents: React.FC = () => {
         
         <p><strong>5. INTELLECTUAL PROPERTY.</strong> All deliverables created by Service Provider under this Agreement shall be the property of the Customer upon full payment of all fees.</p>
         
-        <p className="text-slate-400 italic pt-4">[... This is a truncated view of the standard agreement for reference purposes ...]</p>
+        <p><strong>6. TERMINATION.</strong> Either party may terminate this agreement with 30 days written notice. Upon termination, Customer shall pay for all services rendered up to the date of termination.</p>
+
+        <p><strong>7. LIMITATION OF LIABILITY.</strong> In no event shall either party be liable for any indirect, incidental, special, or consequential damages.</p>
+
+        <p><strong>8. GOVERNING LAW.</strong> This Agreement shall be governed by the laws of India.</p>
       </div>
       
       <div className="mt-12 p-6 bg-slate-50 rounded-lg border border-slate-200">

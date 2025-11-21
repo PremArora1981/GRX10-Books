@@ -1,13 +1,28 @@
-import React, { useState } from 'react';
-import { Plus, Search, Filter, MoreHorizontal, Download, Printer, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Filter, MoreHorizontal, Download, Printer, ArrowLeft, Save } from 'lucide-react';
 import { Invoice, InvoiceStatus } from '../types';
+import { MOCK_CUSTOMERS } from '../constants';
 
 interface InvoicesProps {
   invoices: Invoice[];
+  onCreateInvoice?: (invoice: Invoice) => void;
+  initialTemplateId?: string | null;
 }
 
-const Invoices: React.FC<InvoicesProps> = ({ invoices }) => {
+const Invoices: React.FC<InvoicesProps> = ({ invoices, onCreateInvoice, initialTemplateId }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  
+  // Form State
+  const [formCustomer, setFormCustomer] = useState('');
+  const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formAmount, setFormAmount] = useState('');
+
+  useEffect(() => {
+    if (initialTemplateId) {
+      setIsCreating(true);
+    }
+  }, [initialTemplateId]);
 
   const filteredInvoices = invoices.filter(inv => 
     inv.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -25,6 +40,105 @@ const Invoices: React.FC<InvoicesProps> = ({ invoices }) => {
     }
   };
 
+  const handleSaveInvoice = () => {
+     if (!onCreateInvoice) return;
+     
+     const amount = parseFloat(formAmount) || 0;
+     const cust = MOCK_CUSTOMERS.find(c => c.id === formCustomer);
+
+     const newInvoice: Invoice = {
+        id: Math.random().toString(36).substring(2, 9),
+        number: `INV-2024-${(invoices.length + 1).toString().padStart(3, '0')}`,
+        date: formDate,
+        dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+        customerId: formCustomer,
+        customerName: cust ? cust.name : 'Unknown Customer',
+        status: InvoiceStatus.SENT,
+        subTotal: amount,
+        taxTotal: amount * 0.18,
+        total: amount * 1.18,
+        items: []
+     };
+
+     onCreateInvoice(newInvoice);
+     setIsCreating(false);
+     setFormAmount('');
+     setFormCustomer('');
+  };
+
+  if (isCreating) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
+         <div className="flex items-center gap-4">
+            <button onClick={() => setIsCreating(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+               <ArrowLeft size={20} />
+            </button>
+            <div>
+               <h2 className="text-2xl font-bold text-slate-800">Create New Invoice</h2>
+               <p className="text-slate-500">
+                  {initialTemplateId ? `Using Template: ${initialTemplateId}` : 'Standard GST Invoice'}
+               </p>
+            </div>
+         </div>
+
+         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
+                  <select 
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={formCustomer}
+                    onChange={e => setFormCustomer(e.target.value)}
+                  >
+                     <option value="">Select Customer</option>
+                     {MOCK_CUSTOMERS.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                     ))}
+                  </select>
+               </div>
+               <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Date</label>
+                  <input 
+                    type="date" 
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={formDate}
+                    onChange={e => setFormDate(e.target.value)}
+                  />
+               </div>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-slate-700 mb-1">Total Amount (₹)</label>
+               <input 
+                 type="number" 
+                 placeholder="0.00" 
+                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                 value={formAmount}
+                 onChange={e => setFormAmount(e.target.value)}
+               />
+               <p className="text-xs text-slate-500 mt-1">GST (18%) will be calculated automatically.</p>
+            </div>
+
+            <div className="pt-4 flex justify-end gap-3">
+               <button 
+                 onClick={() => setIsCreating(false)}
+                 className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg"
+               >
+                 Cancel
+               </button>
+               <button 
+                 onClick={handleSaveInvoice}
+                 disabled={!formCustomer || !formAmount}
+                 className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 <Save size={18} /> Save Invoice
+               </button>
+            </div>
+         </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -32,7 +146,10 @@ const Invoices: React.FC<InvoicesProps> = ({ invoices }) => {
           <h2 className="text-2xl font-bold text-slate-800">Sales Invoices</h2>
           <p className="text-slate-500">Manage your billing and GST returns</p>
         </div>
-        <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm shadow-emerald-200">
+        <button 
+          onClick={() => setIsCreating(true)}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm shadow-emerald-200"
+        >
           <Plus size={18} />
           New Invoice
         </button>

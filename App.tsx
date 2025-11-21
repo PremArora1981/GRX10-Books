@@ -11,11 +11,21 @@ import { MOCK_INVOICES } from './constants';
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   const [invoices, setInvoices] = useState<Invoice[]>(MOCK_INVOICES);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const handleImport = (newInvoices: Invoice[]) => {
     setInvoices(prev => [...prev, ...newInvoices]);
-    // Optional: Switch view or show toast
     alert(`Successfully imported ${newInvoices.length} records.`);
+  };
+
+  const handleAddInvoice = (newInvoice: Invoice) => {
+    setInvoices(prev => [newInvoice, ...prev]);
+    setSelectedTemplate(null); // Reset template after creation
+  };
+
+  const handleUseTemplate = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    setCurrentView(View.INVOICES);
   };
 
   const renderContent = () => {
@@ -23,13 +33,19 @@ const App: React.FC = () => {
       case View.DASHBOARD:
         return <Dashboard invoices={invoices} />;
       case View.INVOICES:
-        return <Invoices invoices={invoices} />;
+        return (
+          <Invoices 
+            invoices={invoices} 
+            onCreateInvoice={handleAddInvoice}
+            initialTemplateId={selectedTemplate}
+          />
+        );
       case View.MIGRATION:
         return <Migration onImport={handleImport} />;
       case View.ASSISTANT:
         return <AiAssistant invoices={invoices} />;
       case View.DOCUMENTS:
-        return <Documents />;
+        return <Documents onUseTemplate={handleUseTemplate} />;
       case View.BANKING:
       case View.REPORTS:
         return (
