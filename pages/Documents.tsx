@@ -225,9 +225,12 @@ const Documents: React.FC = () => {
                              </div>
                              
                              {doc.extractedData.summary && (
-                               <div className="mt-3 text-xs bg-white p-2 rounded border border-emerald-100/50">
-                                  <span className="block text-slate-400 mb-1">Content Summary</span>
-                                  <span className="text-slate-700">{doc.extractedData.summary}</span>
+                               <div className="mt-3 text-xs bg-white p-3 rounded border border-emerald-100/50 shadow-sm">
+                                  <div className="flex items-center gap-1.5 mb-1 text-slate-500 font-medium">
+                                     <Info size={14} className="text-emerald-600"/>
+                                     <span>Document Summary</span>
+                                  </div>
+                                  <p className="text-slate-700 leading-relaxed pl-5 border-l-2 border-emerald-200">{doc.extractedData.summary}</p>
                                </div>
                              )}
 
