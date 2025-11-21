@@ -82,13 +82,23 @@ export enum View {
 
 export type AgreementStatus = 'Sent' | 'Viewed' | 'Signed' | 'Expired';
 
+export interface AuditEvent {
+  id: string;
+  timestamp: string;
+  action: string;
+  details: string;
+}
+
 export interface Agreement {
   id: string;
   customerName: string;
+  recipientEmail: string;
   type: 'MSA' | 'NDA' | 'Service Contract';
   sentDate: string;
   status: AgreementStatus;
   lastActivity: string;
+  uniqueLink: string;
+  auditTrail: AuditEvent[];
 }
 
 export interface InvoiceTemplate {
