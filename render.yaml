@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: grx10-books
+    env: node
+    buildCommand: npm install && cd server && npm install && cd .. && npm run build
+    startCommand: cd server && node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/src/server/database.sqlite
+      sizeGB: 1
