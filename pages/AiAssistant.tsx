@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Sparkles, User, Bot, Loader2 } from 'lucide-react';
 import { Invoice, ChatMessage } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { sendMessageToGemini } from '../services/geminiService';
 
 interface AiAssistantProps {
   invoices: Invoice[];
@@ -19,15 +19,15 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ invoices }) => {
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Initialize Gemini Service
-  const geminiRef = useRef<GeminiService | null>(null);
-  
-  useEffect(() => {
-    if (!geminiRef.current) {
-      geminiRef.current = new GeminiService();
-    }
-  }, []);
+  // const geminiRef = useRef<GeminiService | null>(null);
+
+  // useEffect(() => {
+  //   if (!geminiRef.current) {
+  //     geminiRef.current = new GeminiService();
+  //   }
+  // }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,32 +52,26 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ invoices }) => {
     setIsLoading(true);
 
     try {
-        // Convert internal chat format to Gemini API format
-        const history = messages.map(m => ({
-            role: m.role === 'model' ? 'model' : 'user',
-            parts: [{ text: m.text }]
-        }));
+      const responseText = await sendMessageToGemini(userMsg.text, messages);
 
-        const responseText = await geminiRef.current!.sendMessage(history, userMsg.text, { invoices });
-        
-        const modelMsg: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'model',
-            text: responseText,
-            timestamp: new Date()
-        };
-        setMessages(prev => [...prev, modelMsg]);
+      const modelMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: responseText,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, modelMsg]);
 
     } catch (error) {
-        const errorMsg: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'model',
-            text: "I encountered an error processing your request. Please check your connection or API key.",
-            timestamp: new Date()
-        };
-        setMessages(prev => [...prev, errorMsg]);
+      const errorMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: "I encountered an error processing your request. Please check your connection.",
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -93,60 +87,60 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ invoices }) => {
       {/* Header */}
       <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
         <div className="flex items-center gap-3">
-           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white">
-              <Sparkles size={20} />
-           </div>
-           <div>
-             <h3 className="font-bold text-slate-800">Gemini Finance Assistant</h3>
-             <p className="text-xs text-slate-500 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Online • Powered by Google Gemini
-             </p>
-           </div>
+          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white">
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800">Gemini Finance Assistant</h3>
+            <p className="text-xs text-slate-500 flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Online • Powered by Google Gemini
+            </p>
+          </div>
         </div>
         <div className="text-xs px-2 py-1 bg-slate-100 rounded text-slate-500 border border-slate-200">
-           Context: {invoices.length} Invoices Loaded
+          Context: {invoices.length} Invoices Loaded
         </div>
       </div>
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50/30">
         {messages.map((msg) => (
-          <div 
-            key={msg.id} 
+          <div
+            key={msg.id}
             className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
           >
             <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 
               ${msg.role === 'user' ? 'bg-slate-200 text-slate-600' : 'bg-indigo-100 text-indigo-600'}`}>
-               {msg.role === 'user' ? <User size={16} /> : <Bot size={18} />}
+              {msg.role === 'user' ? <User size={16} /> : <Bot size={18} />}
             </div>
-            
+
             <div className={`max-w-[80%] space-y-1`}>
-               <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm
-                 ${msg.role === 'user' 
-                   ? 'bg-slate-900 text-white rounded-tr-sm' 
-                   : 'bg-white text-slate-700 border border-slate-200 rounded-tl-sm'
-                 }`}>
-                 {msg.text.split('\n').map((line, i) => (
-                   <p key={i} className="min-h-[1.2em]">{line}</p>
-                 ))}
-               </div>
-               <p className={`text-[10px] text-slate-400 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                 {msg.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-               </p>
+              <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm
+                 ${msg.role === 'user'
+                  ? 'bg-slate-900 text-white rounded-tr-sm'
+                  : 'bg-white text-slate-700 border border-slate-200 rounded-tl-sm'
+                }`}>
+                {msg.text.split('\n').map((line, i) => (
+                  <p key={i} className="min-h-[1.2em]">{line}</p>
+                ))}
+              </div>
+              <p className={`text-[10px] text-slate-400 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
             </div>
           </div>
         ))}
-        
+
         {isLoading && (
           <div className="flex gap-4">
-             <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0 flex items-center justify-center mt-1">
-               <Bot size={18} />
-             </div>
-             <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-2">
-               <Loader2 className="animate-spin text-indigo-500" size={16} />
-               <span className="text-xs text-slate-500 font-medium">Analyzing financial data...</span>
-             </div>
+            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0 flex items-center justify-center mt-1">
+              <Bot size={18} />
+            </div>
+            <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-2">
+              <Loader2 className="animate-spin text-indigo-500" size={16} />
+              <span className="text-xs text-slate-500 font-medium">Analyzing financial data...</span>
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -164,7 +158,7 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ invoices }) => {
             rows={1}
             style={{ minHeight: '44px' }}
           />
-          <button 
+          <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
             className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
