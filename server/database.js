@@ -5,9 +5,13 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Use SQLite for local development
+const dbPath = process.env.NODE_ENV === 'production'
+    ? '/tmp/database.sqlite'
+    : path.join(__dirname, 'database.sqlite');
+
 const sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: path.join(__dirname, 'database.sqlite'),
+    storage: dbPath,
     logging: false
 });
 

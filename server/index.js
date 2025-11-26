@@ -73,10 +73,14 @@ app.get('*', (req, res) => {
 });
 
 // Initialize DB and start server
+// Initialize DB
 initDb().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  console.log('Database initialized successfully');
 }).catch(err => {
   console.error('Failed to initialize database:', err);
+});
+
+// Start server immediately (don't wait for DB) to satisfy Cloud Run health check
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
