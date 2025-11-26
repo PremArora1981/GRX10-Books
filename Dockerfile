@@ -28,6 +28,7 @@ EXPOSE 8080
 
 # Define environment variable for port
 ENV PORT=8080
+ENV NODE_ENV=production
 
 # Start the server
 CMD ["node", "server/index.js"]
