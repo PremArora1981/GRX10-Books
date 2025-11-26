@@ -3,10 +3,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import session from 'express-session';
+import passport from 'passport';
 import { sequelize, initDb } from './database.js';
 import accountingRoutes from './routes/accounting.js';
 import aiRoutes from './routes/ai.js';
 import migrationRoutes from './routes/migration.js';
+import authRoutes from './routes/auth.js';
 
 dotenv.config();
 
@@ -22,12 +25,32 @@ console.log(`Current directory: ${__dirname}`);
 app.use(cors());
 app.use(express.json({ limit: '50mb' })); // Increased limit for file uploads
 
+// --- Session & Passport Config ---
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'grx10-secret-key-change-me',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Secure in production (HTTPS)
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Trust proxy is required for secure cookies behind a proxy (like Cloud Run)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Serve static files from the React app
 const distPath = path.join(__dirname, '../dist');
 console.log(`Serving static files from: ${distPath}`);
 app.use(express.static(distPath));
 
 // Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/accounting', accountingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/migration', migrationRoutes);

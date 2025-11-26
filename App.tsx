@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Invoices from './pages/Invoices';
@@ -11,13 +11,42 @@ import Banking from './pages/Banking';
 import Vendors from './pages/Vendors';
 import Customers from './pages/Customers';
 import CashFlow from './pages/CashFlow';
+import Login from './pages/Login';
 import { View, Invoice } from './types';
 import { MOCK_INVOICES } from './constants';
+import { Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   const [invoices, setInvoices] = useState<Invoice[]>(MOCK_INVOICES);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const res = await fetch('/api/auth/status');
+      const data = await res.json();
+      if (data.isAuthenticated) {
+        setIsAuthenticated(true);
+        setUser(data.user);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      console.error("Auth check failed", error);
+      setIsAuthenticated(false);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
 
   const handleImport = (newInvoices: Invoice[]) => {
     setInvoices(prev => [...prev, ...newInvoices]);
@@ -49,6 +78,18 @@ const App: React.FC = () => {
       default: return <Dashboard invoices={invoices} />;
     }
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-indigo-600" size={48} />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc]">
