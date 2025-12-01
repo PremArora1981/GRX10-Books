@@ -17,7 +17,8 @@ const TENANT_ID = process.env.MICROSOFT_TENANT_ID; // Optional, but good for sin
 // TODO: Replace these with the actual allowed email addresses
 const ALLOWED_EMAILS = [
     'user1@example.com',
-    'user2@example.com'
+    'user2@example.com',
+    'sriram@grx10.com'
 ];
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
