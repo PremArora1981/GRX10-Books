@@ -80,16 +80,14 @@ export const RolesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <ConfigManager
-        title="System Roles"
-        apiEndpoint="security/roles"
-        fields={[
-          { key: 'name', label: 'Role Name', type: 'text', required: true },
-          { key: 'code', label: 'Code', type: 'text' },
-          { key: 'description', label: 'Description', type: 'textarea' }
-        ]}
-        onItemChange={fetchRoles}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">System Roles</h2>
+        <p className="text-slate-500 dark:text-slate-400 mb-6">Manage system roles. Use the Security & Approvals section to assign permissions to roles.</p>
+        <div className="text-sm text-slate-600 dark:text-slate-400">
+          <p>Roles are managed through the Security & Approvals → Roles section.</p>
+          <p className="mt-2">To create or edit roles, please use the dedicated Roles management page.</p>
+        </div>
+      </div>
 
       {/* Permission Assignment */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">

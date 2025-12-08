@@ -42,11 +42,21 @@ import { RolesPage } from '../features/security/pages/RolesPage';
 import { PermissionsPage } from '../features/security/pages/PermissionsPage';
 import { UserRolesPage } from '../features/security/pages/UserRolesPage';
 import { ApprovalWorkflowsPage } from '../features/security/pages/ApprovalWorkflowsPage';
+// Reports Pages
+import { TrialBalancePage } from '../features/reports/pages/TrialBalancePage';
+import { BalanceSheetPage } from '../features/reports/pages/BalanceSheetPage';
+import { ProfitLossPage } from '../features/reports/pages/ProfitLossPage';
+import { EmployeeDirectoryReportPage } from '../features/reports/pages/EmployeeDirectoryReportPage';
+import { AttendanceReportPage } from '../features/reports/pages/AttendanceReportPage';
+import { LeaveReportPage } from '../features/reports/pages/LeaveReportPage';
+import { PayrollReportPage } from '../features/reports/pages/PayrollReportPage';
 import { View, Invoice } from '../shared/types';
 import { MOCK_INVOICES } from '../shared/constants/app.constants';
 import { Loader2 } from 'lucide-react';
 import { ConfigurationProvider } from '../shared/contexts/ConfigurationContext';
 import { ThemeProvider } from '../shared/contexts/ThemeContext';
+import { AuthProvider } from '../shared/contexts/AuthContext';
+import { EmployeeProvider } from '../shared/contexts/EmployeeContext';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
@@ -143,7 +153,7 @@ const App: React.FC = () => {
       case View.POLICY_CHAT: return <HRMSProvider><PolicyChat /></HRMSProvider>;
       // OS Views
       case View.OS_DASHBOARD: return <OSDashboardPage />;
-      case View.GOALS: return <GoalsPage />;
+      case View.GOALS: return <HRMSProvider><GoalsPage /></HRMSProvider>;
       case View.MEMOS: return <MemosPage />;
       // Configuration Views
       case View.CONFIG_ORGANIZATIONS: return <OrganizationsPage />;
@@ -163,6 +173,14 @@ const App: React.FC = () => {
       case View.SECURITY_USER_ROLES: return <UserRolesPage />;
       case View.SECURITY_APPROVAL_WORKFLOWS: return <ApprovalWorkflowsPage />;
       case View.SECURITY_APPROVAL_REQUESTS: return <div className="p-8"><h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Approval Requests</h2><p className="text-slate-600 dark:text-slate-400 mt-2">Approval requests page coming soon...</p></div>;
+      // Reports Views
+      case View.REPORT_TRIAL_BALANCE: return <TrialBalancePage />;
+      case View.REPORT_BALANCE_SHEET: return <BalanceSheetPage />;
+      case View.REPORT_PROFIT_LOSS: return <ProfitLossPage />;
+      case View.REPORT_EMPLOYEE_DIRECTORY: return <EmployeeDirectoryReportPage />;
+      case View.REPORT_ATTENDANCE: return <AttendanceReportPage />;
+      case View.REPORT_LEAVES: return <LeaveReportPage />;
+      case View.REPORT_PAYROLL: return <PayrollReportPage />;
       default: return <DashboardPage invoices={invoices} />;
     }
   };
@@ -187,18 +205,22 @@ const App: React.FC = () => {
 
   return (
     <ThemeProvider>
-      <ConfigurationProvider>
-        <div className="flex min-h-screen bg-[#f8fafc] dark:bg-slate-900">
-          <Sidebar 
-            currentView={currentView} 
-            onChangeView={setCurrentView}
-            onCollapseChange={setIsSidebarCollapsed}
-          />
-          <main className={`flex-1 p-8 transition-all duration-300 bg-slate-50 dark:bg-slate-900 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
-            {renderContent()}
-          </main>
-        </div>
-      </ConfigurationProvider>
+      <EmployeeProvider>
+        <AuthProvider>
+          <ConfigurationProvider>
+            <div className="flex min-h-screen bg-[#f8fafc] dark:bg-slate-900">
+              <Sidebar 
+                currentView={currentView} 
+                onChangeView={setCurrentView}
+                onCollapseChange={setIsSidebarCollapsed}
+              />
+              <main className={`flex-1 p-8 transition-all duration-300 bg-slate-50 dark:bg-slate-900 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+                {renderContent()}
+              </main>
+            </div>
+          </ConfigurationProvider>
+        </AuthProvider>
+      </EmployeeProvider>
     </ThemeProvider>
   );
 };

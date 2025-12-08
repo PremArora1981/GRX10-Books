@@ -1,18 +1,240 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../shared/contexts/AuthContext';
 import { HRMSRole as Role } from '../../../shared/types';
-import { Download, FileText, DollarSign } from 'lucide-react';
+import { Download, FileText, DollarSign, Loader2, Plus } from 'lucide-react';
+
+interface Payslip {
+  id: string;
+  employeeId: string;
+  month: string;
+  basic: number;
+  hra: number;
+  allowances: number;
+  deductions: number;
+  netPay: number;
+  generatedDate: string;
+  Employee?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  breakdown?: {
+    earnings: {
+      basic: number;
+      hra: number;
+      specialAllowance: number;
+      otherAllowances: number;
+      grossSalary: number;
+    };
+    deductions: {
+      pfEmployee: number;
+      esiEmployee: number;
+      tds: number;
+      professionalTax: number;
+      otherDeductions: number;
+      totalDeductions: number;
+    };
+    netPay: number;
+  };
+}
 
 export const Payroll: React.FC = () => {
   const { user } = useAuth();
+  const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [salaryStructure, setSalaryStructure] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generateMonth, setGenerateMonth] = useState('');
 
-  const mockPayslips = [
-    { month: 'October', year: '2023', net: 85000, generated: '2023-10-31' },
-    { month: 'September', year: '2023', net: 85000, generated: '2023-09-30' },
-    { month: 'August', year: '2023', net: 85000, generated: '2023-08-31' },
-  ];
+  // Fetch payslips
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchPayslips = async () => {
+      setLoading(true);
+      try {
+        let url = '/api/hrms/payslips';
+        
+        // Role-based filtering
+        if (user.role === Role.ADMIN || user.role === Role.HR || user.role === Role.FINANCE) {
+          // Admin/HR/Finance: See all payslips
+          url = '/api/hrms/payslips';
+        } else if (user.role === Role.MANAGER) {
+          // Manager: Get employee record first to find their ID, then get reportees' payslips
+          try {
+            const empResponse = await fetch('/api/hrms/employees');
+            if (empResponse.ok) {
+              const employees = await empResponse.json();
+              const currentEmployee = Array.isArray(employees) 
+                ? employees.find((e: any) => e.email === user.email || e.id === user.id) 
+                : null;
+              if (currentEmployee && currentEmployee.id) {
+                url = `/api/hrms/payslips?managerId=${currentEmployee.id}`;
+              } else {
+                url = `/api/hrms/payslips?employeeId=${user.id}`;
+              }
+            } else {
+              url = `/api/hrms/payslips?employeeId=${user.id}`;
+            }
+          } catch (err) {
+            url = `/api/hrms/payslips?employeeId=${user.id}`;
+          }
+        } else {
+          // Employee: See only their own records
+          try {
+            const empResponse = await fetch('/api/hrms/employees');
+            if (empResponse.ok) {
+              const employees = await empResponse.json();
+              const currentEmployee = Array.isArray(employees) 
+                ? employees.find((e: any) => e.email === user.email || e.id === user.id) 
+                : null;
+              if (currentEmployee && currentEmployee.id) {
+                url = `/api/hrms/payslips?employeeId=${currentEmployee.id}`;
+              } else {
+                url = `/api/hrms/payslips?employeeId=${user.id}`;
+              }
+            } else {
+              url = `/api/hrms/payslips?employeeId=${user.id}`;
+            }
+          } catch (err) {
+            url = `/api/hrms/payslips?employeeId=${user.id}`;
+          }
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch payslips');
+        const data = await response.json();
+        setPayslips(data);
+      } catch (err) {
+        setError('Failed to load payslips');
+        console.error('Error fetching payslips:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const handleDownload = (month: string, year: string, netPay: number) => {
+    fetchPayslips();
+  }, [user]);
+
+  // Fetch employee salary structure
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchSalaryStructure = async () => {
+      try {
+        const response = await fetch(`/api/hrms/employees/${user.id}`);
+        if (response.ok) {
+          const employee = await response.json();
+          setSalaryStructure({
+            annualCTC: employee.salary || 0,
+            monthlyGross: (employee.salary || 0) / 12,
+            breakdown: employee.salaryBreakdown ? 
+              (typeof employee.salaryBreakdown === 'string' ? JSON.parse(employee.salaryBreakdown) : employee.salaryBreakdown) 
+              : {}
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching salary structure:', err);
+      }
+    };
+
+    fetchSalaryStructure();
+  }, [user]);
+
+  const handleGeneratePayslip = async () => {
+    if (!user) return;
+
+    // Validate form
+    const validationRules = {
+      generateMonth: { 
+        required: true,
+        custom: (value: string) => {
+          if (!value) return 'Month is required';
+          const [year, month] = value.split('-');
+          const selectedDate = new Date(parseInt(year), parseInt(month) - 1);
+          const now = new Date();
+          const currentMonth = new Date(now.getFullYear(), now.getMonth());
+          if (selectedDate > currentMonth) {
+            return 'Cannot generate payslip for future months';
+          }
+          return null;
+        }
+      }
+    };
+
+    const validationErrors = validateForm({ generateMonth }, validationRules);
+    if (Object.keys(validationErrors).length > 0) {
+      setError(validationErrors.generateMonth || 'Please select a valid month');
+      return;
+    }
+
+    setGenerating(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/hrms/payslips/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: user.id,
+          month: generateMonth
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate payslip');
+      }
+
+      // Refresh payslips
+      const payslipsRes = await fetch(`/api/hrms/payslips?employeeId=${user.id}`);
+      if (payslipsRes.ok) {
+        const data = await payslipsRes.json();
+        setPayslips(data);
+      }
+
+      setShowGenerateModal(false);
+      setGenerateMonth('');
+      alert('Payslip generated successfully!');
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate payslip');
+      console.error('Error generating payslip:', err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const fetchPayslipDetails = async (payslipId: string) => {
+    try {
+      const response = await fetch(`/api/hrms/payslips/${payslipId}`);
+      if (!response.ok) throw new Error('Failed to fetch payslip details');
+      return await response.json();
+    } catch (err) {
+      console.error('Error fetching payslip details:', err);
+      return null;
+    }
+  };
+
+  const handleDownload = async (payslip: Payslip) => {
+    // Fetch detailed payslip if breakdown not available
+    let detailedPayslip = payslip;
+    if (!payslip.breakdown) {
+      const details = await fetchPayslipDetails(payslip.id);
+      if (details) detailedPayslip = details;
+    }
+
+    const [year, monthNum] = payslip.month.split('-');
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                       'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = monthNames[parseInt(monthNum) - 1];
+    
+    const breakdown = detailedPayslip.breakdown || {
+      earnings: { basic: payslip.basic, hra: payslip.hra, specialAllowance: payslip.allowances, otherAllowances: 0, grossSalary: payslip.basic + payslip.hra + payslip.allowances },
+      deductions: { pfEmployee: 0, esiEmployee: 0, tds: 0, professionalTax: 0, otherDeductions: 0, totalDeductions: payslip.deductions },
+      netPay: payslip.netPay
+    };
      const htmlContent = `
       <html>
         <head>
@@ -50,23 +272,28 @@ export const Payroll: React.FC = () => {
             </div>
             <div class="box">
               <strong>Payment Details</strong>
-              Bank: HDFC Bank<br/>
-              Acct: XXXXXX1234<br/>
-              Date: 30 ${month} ${year}<br/>
+              Bank: ${user?.bankName || 'N/A'}<br/>
+              Acct: ${user?.bankAccountNumber ? 'XXXXXX' + user.bankAccountNumber.slice(-4) : 'N/A'}<br/>
+              Date: ${payslip.generatedDate}<br/>
               Days Payable: 30
             </div>
           </div>
 
           <table>
             <tr><th>Description</th><th style="text-align:right">Amount (USD)</th></tr>
-            <tr><td>Basic Salary</td><td class="amount">50,000.00</td></tr>
-            <tr><td>House Rent Allowance (HRA)</td><td class="amount">20,000.00</td></tr>
-            <tr><td>Special Allowances</td><td class="amount">15,000.00</td></tr>
-            <tr><td><i>Less: Income Tax</i></td><td class="amount deduction">-2,500.00</td></tr>
-            <tr><td><i>Less: Provident Fund</i></td><td class="amount deduction">-1,800.00</td></tr>
+            <tr><td>Basic Salary</td><td class="amount">₹${breakdown.earnings.basic.toLocaleString('en-IN')}.00</td></tr>
+            <tr><td>House Rent Allowance (HRA)</td><td class="amount">₹${breakdown.earnings.hra.toLocaleString('en-IN')}.00</td></tr>
+            <tr><td>Special Allowance</td><td class="amount">₹${breakdown.earnings.specialAllowance.toLocaleString('en-IN')}.00</td></tr>
+            ${breakdown.earnings.otherAllowances > 0 ? `<tr><td>Other Allowances</td><td class="amount">₹${breakdown.earnings.otherAllowances.toLocaleString('en-IN')}.00</td></tr>` : ''}
+            <tr><td colspan="2" style="padding-top: 15px; border-top: 1px solid #e5e7eb;"><strong>Gross Salary</strong></td></tr>
+            <tr><td><i>Less: Provident Fund (PF)</i></td><td class="amount deduction">-₹${breakdown.deductions.pfEmployee.toLocaleString('en-IN')}.00</td></tr>
+            ${breakdown.deductions.esiEmployee > 0 ? `<tr><td><i>Less: ESI</i></td><td class="amount deduction">-₹${breakdown.deductions.esiEmployee.toLocaleString('en-IN')}.00</td></tr>` : ''}
+            <tr><td><i>Less: Income Tax (TDS)</i></td><td class="amount deduction">-₹${breakdown.deductions.tds.toLocaleString('en-IN')}.00</td></tr>
+            <tr><td><i>Less: Professional Tax</i></td><td class="amount deduction">-₹${breakdown.deductions.professionalTax.toLocaleString('en-IN')}.00</td></tr>
+            ${breakdown.deductions.otherDeductions > 0 ? `<tr><td><i>Less: Other Deductions</i></td><td class="amount deduction">-₹${breakdown.deductions.otherDeductions.toLocaleString('en-IN')}.00</td></tr>` : ''}
             <tr class="total-row">
               <td>NET PAYABLE</td>
-              <td class="amount">$${netPay.toLocaleString()}.00</td>
+              <td class="amount">₹${breakdown.netPay.toLocaleString('en-IN')}.00</td>
             </tr>
           </table>
           
@@ -82,7 +309,7 @@ export const Payroll: React.FC = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Payslip_${month}_${year}.html`;
+    a.download = `Payslip_${month}_${year}_${user?.name || 'Employee'}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -91,7 +318,27 @@ export const Payroll: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Payroll & Compensation</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Payroll & Compensation</h2>
+        <button
+          onClick={() => {
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            setGenerateMonth(currentMonth);
+            setShowGenerateModal(true);
+          }}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors"
+        >
+          <Plus size={18} />
+          Generate Payslip
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg p-4 text-rose-700 dark:text-rose-300">
+          {error}
+        </div>
+      )}
 
       {user?.role === Role.FINANCE && (
          <div className="bg-indigo-900 rounded-xl p-6 text-white mb-8">
@@ -120,62 +367,134 @@ export const Payroll: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Salary Structure Card */}
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 lg:col-span-1">
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 lg:col-span-1">
           <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
             <DollarSign size={20} className="text-emerald-500" />
             Current Salary Structure
           </h3>
-          <div className="space-y-3 text-sm">
-             <div className="flex justify-between">
-               <span className="text-slate-500">Basic Salary</span>
-               <span className="font-medium text-slate-900 dark:text-slate-100">$50,000</span>
-             </div>
-             <div className="flex justify-between">
-               <span className="text-slate-500">HRA</span>
-               <span className="font-medium text-slate-900 dark:text-slate-100">$20,000</span>
-             </div>
-             <div className="flex justify-between">
-               <span className="text-slate-500">Special Allowance</span>
-               <span className="font-medium text-slate-900 dark:text-slate-100">$15,000</span>
-             </div>
-             <div className="h-px bg-slate-100 my-2"></div>
-             <div className="flex justify-between font-bold">
-               <span className="text-slate-700">Gross Salary</span>
-               <span className="text-slate-900 dark:text-slate-100">$85,000</span>
-             </div>
-          </div>
+          {salaryStructure ? (
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Annual CTC</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">₹{salaryStructure.annualCTC.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Monthly Gross</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">₹{Math.round(salaryStructure.monthlyGross).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-700 my-2"></div>
+              <div className="text-xs text-slate-400">
+                Breakdown calculated automatically based on CTC
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">Loading salary structure...</div>
+          )}
         </div>
 
         {/* Payslips List */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 lg:col-span-2 overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 lg:col-span-2 overflow-hidden">
           <div className="p-6 border-b border-slate-100 dark:border-slate-700 font-semibold text-slate-900 dark:text-slate-100">Recent Payslips</div>
-          <div className="divide-y divide-slate-100">
-            {mockPayslips.map((slip, idx) => (
-              <div key={idx} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
-                    <FileText size={20} />
+          {loading ? (
+            <div className="p-8 text-center">
+              <Loader2 className="animate-spin text-indigo-600 mx-auto" size={32} />
+              <p className="text-slate-500 mt-2">Loading payslips...</p>
+            </div>
+          ) : payslips.length === 0 ? (
+            <div className="p-8 text-center text-slate-500">No payslips found. Generate your first payslip to get started.</div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+              {payslips.map((slip) => {
+                const [year, monthNum] = slip.month.split('-');
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                                   'July', 'August', 'September', 'October', 'November', 'December'];
+                const month = monthNames[parseInt(monthNum) - 1];
+                
+                return (
+                  <div key={slip.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                        <FileText size={20} />
+                      </div>
+                      <div>
+                        {(user?.role === Role.ADMIN || user?.role === Role.HR || user?.role === Role.FINANCE || user?.role === Role.MANAGER) && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                            {slip.Employee?.name || slip.employeeId}
+                          </p>
+                        )}
+                        <p className="font-medium text-slate-900 dark:text-slate-100">{month} {year}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Generated on {slip.generatedDate}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <span className="font-mono font-medium text-slate-700 dark:text-slate-300">₹{slip.netPay.toLocaleString('en-IN')}</span>
+                      <button 
+                        onClick={() => handleDownload(slip)}
+                        className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 p-2 rounded-full transition-colors"
+                        title="Download Payslip"
+                      >
+                        <Download size={20} />
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-slate-900">{slip.month} {slip.year}</p>
-                    <p className="text-xs text-slate-500">Generated on {slip.generated}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-6">
-                  <span className="font-mono font-medium text-slate-700">${slip.net.toLocaleString()}</span>
-                  <button 
-                    onClick={() => handleDownload(slip.month, slip.year, slip.net)}
-                    className="text-indigo-600 hover:bg-indigo-50 p-2 rounded-full transition-colors"
-                    title="Download Payslip"
-                  >
-                    <Download size={20} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Generate Payslip Modal */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-md p-6 shadow-2xl">
+            <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-slate-100">Generate Payslip</h3>
+            {error && (
+              <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg text-sm text-rose-700 dark:text-rose-300">
+                {error}
+              </div>
+            )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Month *</label>
+                <input
+                  type="month"
+                  className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={generateMonth}
+                  onChange={e => setGenerateMonth(e.target.value)}
+                  max={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowGenerateModal(false);
+                    setError(null);
+                    setGenerateMonth('');
+                  }}
+                  className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleGeneratePayslip}
+                  disabled={generating || !generateMonth}
+                  className="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

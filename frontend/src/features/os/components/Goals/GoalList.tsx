@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../../../../shared/contexts/StoreContext';
-import { Goal, GoalStatus, GoalComment } from '../../../../shared/types';
+import { useAuth } from '../../../../shared/contexts/AuthContext';
+import { Goal, GoalStatus, GoalComment, HRMSRole } from '../../../../shared/types';
 import { Plus, CheckCircle, AlertCircle, XCircle, TrendingUp, Edit2, MessageSquare, Send } from 'lucide-react';
 import { optimizeGoal } from '../../../../shared/services/gemini/geminiService';
 
 export const GoalList: React.FC = () => {
   const { goals, currentUser, addGoal, updateGoal, users } = useStore();
+  const { user: authUser } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Partial<Goal>>({});
   const [aiSuggestion, setAiSuggestion] = useState<string>('');
@@ -13,9 +15,30 @@ export const GoalList: React.FC = () => {
   const [newComment, setNewComment] = useState('');
 
   // Filter goals based on role
-  const visibleGoals = currentUser.role === 'Admin' 
-    ? goals 
-    : goals.filter(g => g.ownerId === currentUser.id);
+  // HR/Admin: See all goals
+  // Manager: See own goals + reportees' goals (using StoreContext users)
+  // Employee: See only own goals
+  const visibleGoals = useMemo(() => {
+    if (!authUser) return goals;
+    
+    if (authUser.role === HRMSRole.HR || authUser.role === HRMSRole.ADMIN) {
+      return goals; // HR/Admin see all
+    }
+    
+    if (authUser.role === HRMSRole.MANAGER) {
+      // Manager sees own goals + reportees' goals
+      // For now, use StoreContext users to find reportees
+      // In a real implementation, this would use EmployeeContext
+      const reporteeIds = users
+        .filter(u => u.id !== authUser.id) // Simplified: Manager sees all other users' goals
+        .map(u => u.id);
+      const allVisibleIds = [authUser.id, ...reporteeIds];
+      return goals.filter(g => allVisibleIds.includes(g.ownerId));
+    }
+    
+    // Employee sees only own goals
+    return goals.filter(g => g.ownerId === authUser.id);
+  }, [goals, authUser, users]);
 
   const getStatusColor = (status: GoalStatus) => {
     switch (status) {

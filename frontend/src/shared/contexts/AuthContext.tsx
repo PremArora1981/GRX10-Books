@@ -20,12 +20,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { employees, updateEmployee } = useEmployees();
 
   useEffect(() => {
-    // Check local storage for persisted session
-    const savedUser = localStorage.getItem('grx10_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-  }, []);
+    // Check backend session first, then local storage
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/auth/status');
+        const data = await res.json();
+        if (data.isAuthenticated && data.user) {
+          // Convert backend user to Employee format
+          const backendUser = data.user;
+          // Try to find matching employee in the employees list
+          const employee = employees.find(e => e.id === backendUser.id || e.email === backendUser.email);
+          if (employee) {
+            setUser(employee);
+            localStorage.setItem('grx10_user', JSON.stringify(employee));
+          } else {
+            // If employee not found in list yet, create a temporary user object
+            const tempUser: Employee = {
+              id: backendUser.id,
+              name: backendUser.name || backendUser.displayName || 'User',
+              email: backendUser.email,
+              role: backendUser.role || 'Employee',
+              department: '',
+              designation: '',
+              joinDate: '',
+              status: 'Active',
+              avatar: '',
+              password: ''
+            };
+            setUser(tempUser);
+            localStorage.setItem('grx10_user', JSON.stringify(tempUser));
+          }
+        } else {
+          // Check local storage as fallback
+          const savedUser = localStorage.getItem('grx10_user');
+          if (savedUser) {
+            setUser(JSON.parse(savedUser));
+          }
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+        // Fallback to local storage
+        const savedUser = localStorage.getItem('grx10_user');
+        if (savedUser) {
+          setUser(JSON.parse(savedUser));
+        }
+      }
+    };
+
+    checkSession();
+  }, [employees.length]);
 
   const login = async (email: string, password?: string) => {
     await new Promise(resolve => setTimeout(resolve, 800));
@@ -51,9 +94,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('grx10_user', JSON.stringify(foundUser));
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('grx10_user');
+  const logout = async () => {
+    try {
+      // Call backend logout endpoint to clear session
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Error logging out:', err);
+    } finally {
+      // Clear local state regardless of API call result
+      setUser(null);
+      localStorage.removeItem('grx10_user');
+    }
   };
 
   const resetPassword = async (email: string) => {

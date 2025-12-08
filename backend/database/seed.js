@@ -83,11 +83,12 @@ async function seedDatabase() {
         // Seed HRMS Employees
         console.log('📝 Seeding HRMS Employees...');
         const employees = [
-            { id: 'EMP001', name: 'Alice Carter', email: 'alice@grx10.com', role: 'HR', department: 'Human Resources', designation: 'HR Manager', joinDate: '2022-01-15', avatar: 'https://picsum.photos/200', salary: 85000, status: 'Active', password: 'password123', isNewUser: false },
-            { id: 'EMP002', name: 'Bob Smith', email: 'bob@grx10.com', role: 'Manager', department: 'Engineering', designation: 'Tech Lead', joinDate: '2021-05-20', avatar: 'https://picsum.photos/201', salary: 120000, status: 'Active', password: 'password123', isNewUser: false, managerId: null },
+            { id: 'admin-001', name: 'Administrator', email: 'admin@grx10.com', role: 'Admin', department: 'Administration', designation: 'System Administrator', joinDate: '2020-01-01', avatar: 'https://picsum.photos/199', salary: 150000, status: 'Active', password: 'admin123', isNewUser: false, managerId: null },
+            { id: 'EMP001', name: 'Alice Carter', email: 'alice@grx10.com', role: 'HR', department: 'Human Resources', designation: 'HR Manager', joinDate: '2022-01-15', avatar: 'https://picsum.photos/200', salary: 85000, status: 'Active', password: 'password123', isNewUser: false, managerId: 'admin-001' },
+            { id: 'EMP002', name: 'Bob Smith', email: 'bob@grx10.com', role: 'Manager', department: 'Engineering', designation: 'Tech Lead', joinDate: '2021-05-20', avatar: 'https://picsum.photos/201', salary: 120000, status: 'Active', password: 'password123', isNewUser: false, managerId: 'admin-001' },
             { id: 'EMP003', name: 'Charlie Davis', email: 'charlie@grx10.com', role: 'Employee', department: 'Engineering', designation: 'Frontend Engineer', joinDate: '2023-02-10', managerId: 'EMP002', avatar: 'https://picsum.photos/202', salary: 90000, status: 'Active', password: 'password123', isNewUser: false },
-            { id: 'EMP004', name: 'Diana Evans', email: 'diana@grx10.com', role: 'Finance', department: 'Finance', designation: 'Payroll Specialist', joinDate: '2022-08-01', avatar: 'https://picsum.photos/203', salary: 75000, status: 'Active', password: 'password123', isNewUser: false },
-            { id: 'EMP005', name: 'Ethan Hunt', email: 'ethan@grx10.com', role: 'Employee', department: 'Sales', designation: 'Sales Executive', joinDate: '2023-06-15', avatar: 'https://picsum.photos/204', salary: 60000, status: 'Active', password: 'password123', isNewUser: false }
+            { id: 'EMP004', name: 'Diana Evans', email: 'diana@grx10.com', role: 'Finance', department: 'Finance', designation: 'Payroll Specialist', joinDate: '2022-08-01', avatar: 'https://picsum.photos/203', salary: 75000, status: 'Active', password: 'password123', isNewUser: false, managerId: 'admin-001' },
+            { id: 'EMP005', name: 'Ethan Hunt', email: 'ethan@grx10.com', role: 'Employee', department: 'Sales', designation: 'Sales Executive', joinDate: '2023-06-15', avatar: 'https://picsum.photos/204', salary: 60000, status: 'Active', password: 'password123', isNewUser: false, managerId: 'admin-001' }
         ];
         
         for (const employee of employees) {
@@ -113,12 +114,50 @@ async function seedDatabase() {
         }
         console.log(`   ✅ Created ${leaves.length} Sample Leave Requests`);
 
-        // Seed Attendance Records
+        // Seed Attendance Records (Last 30 days for all employees)
         console.log('📝 Seeding Attendance Records...');
-        const attendance = [
-            { id: 'A001', employeeId: 'EMP003', date: '2023-10-25', checkIn: '09:05', checkOut: '18:10', status: 'Present', durationHours: 9.1 },
-            { id: 'A002', employeeId: 'EMP003', date: '2023-10-26', checkIn: '09:30', checkOut: '18:00', status: 'Late', durationHours: 8.5 }
-        ];
+        const attendance = [];
+        
+        // Generate attendance for last 30 working days (excluding weekends)
+        const today = new Date();
+        const employeeIds = ['admin-001', 'EMP001', 'EMP002', 'EMP003', 'EMP004', 'EMP005'];
+        
+        for (let i = 0; i < 30; i++) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dayOfWeek = date.getDay();
+            
+            // Skip weekends (Saturday = 6, Sunday = 0)
+            if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+            
+            const dateStr = date.toISOString().split('T')[0];
+            
+            employeeIds.forEach((empId, empIndex) => {
+                // Vary check-in times slightly for realism
+                const checkInHour = 9;
+                const checkInMinute = empIndex === 0 ? 0 : (empIndex === 1 ? 30 : (empIndex === 2 ? 0 : (empIndex === 3 ? 0 : 0)));
+                const checkOutHour = 18;
+                const checkOutMinute = empIndex === 0 ? 0 : (empIndex === 1 ? 30 : (empIndex === 2 ? 0 : (empIndex === 3 ? 0 : 0)));
+                
+                // Some late entries
+                const isLate = Math.random() < 0.1 && checkInMinute > 0;
+                const status = isLate ? 'Late' : 'Present';
+                
+                const checkIn = `${String(checkInHour).padStart(2, '0')}:${String(checkInMinute).padStart(2, '0')}`;
+                const checkOut = `${String(checkOutHour).padStart(2, '0')}:${String(checkOutMinute).padStart(2, '0')}`;
+                const durationHours = checkOutHour - checkInHour + (checkOutMinute - checkInMinute) / 60;
+                
+                attendance.push({
+                    id: `ATT-${empId}-${dateStr.replace(/-/g, '')}`,
+                    employeeId: empId,
+                    date: dateStr,
+                    checkIn: checkIn,
+                    checkOut: checkOut,
+                    status: status,
+                    durationHours: durationHours
+                });
+            });
+        }
         
         for (const record of attendance) {
             await AttendanceRecord.findOrCreate({

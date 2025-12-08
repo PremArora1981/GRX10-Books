@@ -2,7 +2,8 @@ import express from 'express';
 import passport from 'passport';
 import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import dotenv from 'dotenv';
-import { User } from '../config/database.js';
+import { Op } from 'sequelize';
+import { User, Employee } from '../config/database.js';
 
 dotenv.config();
 
@@ -100,61 +101,42 @@ router.get('/status', (req, res) => {
     }
 });
 
-// 4. Admin/User Login (Username/Password)
+// 4. Employee Login (Email/Password) - All employees login via Employee table
 router.post('/admin/login', async (req, res) => {
     try {
         const { username, password } = req.body;
 
         if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required' });
+            return res.status(400).json({ error: 'Email/username and password are required' });
         }
 
-        // Try to find user in database first
-        let user = await User.findOne({ 
+        // Find employee by email or ID (email is preferred)
+        const employee = await Employee.findOne({ 
             where: { 
-                username: username,
-                isActive: true 
+                [Op.or]: [
+                    { email: username },
+                    { id: username }
+                ],
+                status: 'Active'
             } 
         });
 
-        // Fallback to environment variables if user not found in DB (backward compatibility)
-        if (!user) {
-            // Check against env vars (for backward compatibility during migration)
-            if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-                // Create user in database if it doesn't exist
-                user = await User.findOrCreate({
-                    where: { username: ADMIN_USERNAME },
-                    defaults: {
-                        id: 'admin-001',
-                        username: ADMIN_USERNAME,
-                        email: 'admin@grx10.com',
-                        passwordHash: ADMIN_PASSWORD, // TODO: Hash with bcrypt in production
-                        displayName: 'Administrator',
-                        role: 'admin',
-                        isActive: true
-                    }
-                }).then(([user]) => user);
-            } else {
-                return res.status(401).json({ error: 'Invalid username or password' });
-            }
-        } else {
-            // User found in DB - check password
-            // For now, compare plain text (TODO: implement bcrypt hashing)
-            if (user.passwordHash !== password) {
-                return res.status(401).json({ error: 'Invalid username or password' });
-            }
+        if (!employee) {
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Update last login
-        await user.update({ lastLogin: new Date() });
+        // Check password (for now, compare plain text - TODO: implement bcrypt hashing)
+        if (employee.password !== password) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
 
-        // Create session user object
+        // Create session user object from employee
         const sessionUser = {
-            id: user.id,
-            displayName: user.displayName || user.username,
-            email: user.email || `${user.username}@grx10.com`,
-            role: user.role,
-            isAdmin: user.role === 'admin'
+            id: employee.id,
+            name: employee.name,
+            email: employee.email,
+            role: employee.role, // 'Admin', 'HR', 'Manager', 'Employee', 'Finance'
+            isAdmin: employee.role === 'Admin' || employee.role === 'HR'
         };
 
         req.login(sessionUser, (err) => {
@@ -164,7 +146,7 @@ router.post('/admin/login', async (req, res) => {
             res.json({ success: true, user: sessionUser });
         });
     } catch (error) {
-        console.error('Admin login error:', error);
+        console.error('Employee login error:', error);
         res.status(500).json({ error: 'Login failed' });
     }
 });

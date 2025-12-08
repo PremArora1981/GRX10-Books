@@ -18,6 +18,7 @@ import hrmsRoutes from './modules/hrms/hrms.routes.js';
 import osRoutes from './modules/os/os.routes.js';
 import configRoutes from './modules/config/config.routes.js';
 import securityRoutes from './modules/security/security.routes.js';
+import reportsRoutes from './modules/reports/reports.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,6 +66,7 @@ app.use('/api/hrms', hrmsRoutes);
 app.use('/api/os', osRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/security', securityRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -73,7 +75,12 @@ app.get('/api/health', (req, res) => {
 
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.
-app.get('*', (req, res) => {
+// Only match non-API routes
+app.get('*', (req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
   console.log(`Catchall: serving index.html for ${req.url}`);
   res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'), (err) => {
     if (err) {

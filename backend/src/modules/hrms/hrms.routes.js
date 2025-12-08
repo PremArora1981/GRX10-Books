@@ -6,7 +6,8 @@ import {
     LeaveRequest, 
     AttendanceRecord, 
     RegularizationRequest, 
-    Payslip 
+    Payslip,
+    LeaveType
 } from '../../config/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -317,9 +318,26 @@ router.post('/employees/:id/hiring-history', async (req, res) => {
 // Get all leave requests
 router.get('/leaves', async (req, res) => {
     try {
-        const { employeeId, status } = req.query;
+        const { employeeId, managerId, status } = req.query;
         const where = {};
-        if (employeeId) where.employeeId = employeeId;
+        
+        // If managerId is provided, get all employees under that manager
+        if (managerId) {
+            const reportees = await Employee.findAll({
+                where: { managerId: managerId },
+                attributes: ['id']
+            });
+            const reporteeIds = reportees.map(emp => emp.id);
+            if (reporteeIds.length > 0) {
+                where.employeeId = { [Op.in]: reporteeIds };
+            } else {
+                // Manager has no reportees, return empty array
+                return res.json([]);
+            }
+        } else if (employeeId) {
+            where.employeeId = employeeId;
+        }
+        
         if (status) where.status = status;
 
         const leaves = await LeaveRequest.findAll({
@@ -385,6 +403,154 @@ router.put('/leaves/:id', async (req, res) => {
     }
 });
 
+// Get leave balance for an employee
+router.get('/leaves/balance/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        const { year } = req.query;
+        const currentYear = year || new Date().getFullYear().toString();
+        
+        // Get employee
+        const employee = await Employee.findByPk(employeeId);
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+
+        // Parse leave entitlements from employee record
+        let leaveEntitlements = {};
+        if (employee.leaveEntitlements) {
+            try {
+                leaveEntitlements = typeof employee.leaveEntitlements === 'string' 
+                    ? JSON.parse(employee.leaveEntitlements) 
+                    : employee.leaveEntitlements;
+            } catch (e) {
+                console.error('Error parsing leave entitlements:', e);
+            }
+        }
+
+        // Get all approved leave requests for the year
+        const startOfYear = `${currentYear}-01-01`;
+        const endOfYear = `${currentYear}-12-31`;
+        
+        const approvedLeaves = await LeaveRequest.findAll({
+            where: {
+                employeeId,
+                status: 'Approved',
+                startDate: { [Op.gte]: startOfYear },
+                endDate: { [Op.lte]: endOfYear }
+            }
+        });
+
+        // Calculate balance for each leave type
+        const leaveBalances = {};
+        
+        // Helper function to calculate days between dates (excluding weekends)
+        const calculateWorkingDays = (startDate, endDate) => {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            let days = 0;
+            const current = new Date(start);
+            
+            while (current <= end) {
+                const dayOfWeek = current.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Exclude Sunday (0) and Saturday (6)
+                    days++;
+                }
+                current.setDate(current.getDate() + 1);
+            }
+            return days;
+        };
+
+        // Group leaves by type and calculate used days
+        const usedLeaves = {};
+        approvedLeaves.forEach(leave => {
+            const leaveType = leave.type;
+            if (!usedLeaves[leaveType]) {
+                usedLeaves[leaveType] = 0;
+            }
+            const days = calculateWorkingDays(leave.startDate, leave.endDate);
+            usedLeaves[leaveType] += days;
+        });
+
+        // Get leave types from configuration
+        const leaveTypesConfig = await LeaveType.findAll({
+            where: { isActive: true }
+        });
+
+        // Build leave types map from database
+        const leaveTypesMap = {};
+        leaveTypesConfig.forEach(lt => {
+            leaveTypesMap[lt.name] = {
+                maxDays: lt.maxDays || 0,
+                isPaid: lt.isPaid !== false,
+                code: lt.code
+            };
+        });
+
+        // Fallback defaults if no leave types in database
+        const defaultLeaveTypes = {
+            'Sick Leave': { maxDays: 12, isPaid: true },
+            'Casual Leave': { maxDays: 12, isPaid: true },
+            'Earned Leave': { maxDays: 15, isPaid: true },
+            'Compensatory Off': { maxDays: 5, isPaid: true },
+            'Leave Without Pay': { maxDays: 30, isPaid: false },
+            'Maternity Leave': { maxDays: 180, isPaid: true },
+            'Paternity Leave': { maxDays: 7, isPaid: true },
+            'Bereavement Leave': { maxDays: 5, isPaid: true },
+            'Marriage Leave': { maxDays: 3, isPaid: true },
+            'Sabbatical': { maxDays: 90, isPaid: false }
+        };
+
+        // Use database config if available, otherwise use defaults
+        const leaveTypes = Object.keys(leaveTypesMap).length > 0 ? leaveTypesMap : defaultLeaveTypes;
+
+        // Calculate balance for each leave type
+        Object.keys(leaveTypes).forEach(leaveType => {
+            const config = leaveTypes[leaveType];
+            const entitlement = leaveEntitlements[leaveType] || config.maxDays;
+            const used = usedLeaves[leaveType] || 0;
+            const balance = Math.max(0, entitlement - used);
+
+            leaveBalances[leaveType] = {
+                entitlement,
+                used,
+                balance,
+                maxDays: config.maxDays,
+                isPaid: config.isPaid,
+                code: config.code
+            };
+        });
+
+        // Also include any custom leave types from entitlements
+        Object.keys(leaveEntitlements).forEach(leaveType => {
+            if (!leaveBalances[leaveType]) {
+                const used = usedLeaves[leaveType] || 0;
+                const entitlement = leaveEntitlements[leaveType];
+                leaveBalances[leaveType] = {
+                    entitlement,
+                    used,
+                    balance: Math.max(0, entitlement - used),
+                    maxDays: entitlement,
+                    isPaid: true
+                };
+            }
+        });
+
+        res.json({
+            employeeId,
+            year: currentYear,
+            balances: leaveBalances,
+            summary: {
+                totalEntitlement: Object.values(leaveBalances).reduce((sum, b) => sum + b.entitlement, 0),
+                totalUsed: Object.values(leaveBalances).reduce((sum, b) => sum + b.used, 0),
+                totalBalance: Object.values(leaveBalances).reduce((sum, b) => sum + b.balance, 0)
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ============================================
 // ATTENDANCE RECORDS
 // ============================================
@@ -392,9 +558,26 @@ router.put('/leaves/:id', async (req, res) => {
 // Get all attendance records
 router.get('/attendance', async (req, res) => {
     try {
-        const { employeeId, date, startDate, endDate } = req.query;
+        const { employeeId, managerId, date, startDate, endDate } = req.query;
         const where = {};
-        if (employeeId) where.employeeId = employeeId;
+        
+        // If managerId is provided, get all employees under that manager
+        if (managerId) {
+            const reportees = await Employee.findAll({
+                where: { managerId: managerId },
+                attributes: ['id']
+            });
+            const reporteeIds = reportees.map(emp => emp.id);
+            if (reporteeIds.length > 0) {
+                where.employeeId = { [Op.in]: reporteeIds };
+            } else {
+                // Manager has no reportees, return empty array
+                return res.json([]);
+            }
+        } else if (employeeId) {
+            where.employeeId = employeeId;
+        }
+        
         if (date) where.date = date;
         if (startDate && endDate) {
             where.date = { [Op.between]: [startDate, endDate] };
@@ -421,6 +604,111 @@ router.get('/attendance/:id', async (req, res) => {
             return res.status(404).json({ error: 'Attendance record not found' });
         }
         res.json(attendance);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Check-in/Check-out endpoint
+router.post('/attendance/checkin', async (req, res) => {
+    try {
+        const { employeeId } = req.body;
+        const today = new Date().toISOString().split('T')[0];
+        const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+        // Check if there's already an attendance record for today
+        let attendance = await AttendanceRecord.findOne({
+            where: {
+                employeeId,
+                date: today
+            }
+        });
+
+        if (!attendance) {
+            // Check-in: Create new attendance record
+            attendance = await AttendanceRecord.create({
+                id: uuidv4(),
+                employeeId,
+                date: today,
+                checkIn: currentTime,
+                status: 'Present',
+                durationHours: null
+            });
+            res.status(201).json({ 
+                attendance, 
+                action: 'checked-in',
+                message: 'Checked in successfully'
+            });
+        } else if (attendance.checkIn && !attendance.checkOut) {
+            // Check-out: Update existing record
+            const checkOutTime = currentTime;
+            
+            // Calculate duration
+            const [checkInHours, checkInMinutes] = attendance.checkIn.split(':').map(Number);
+            const [checkOutHours, checkOutMinutes] = checkOutTime.split(':').map(Number);
+            const checkInTotalMinutes = checkInHours * 60 + checkInMinutes;
+            const checkOutTotalMinutes = checkOutHours * 60 + checkOutMinutes;
+            const durationMinutes = checkOutTotalMinutes - checkInTotalMinutes;
+            const durationHours = durationMinutes / 60;
+
+            // Determine status based on check-in time (late if after 9:30 AM)
+            let status = 'Present';
+            if (checkInHours > 9 || (checkInHours === 9 && checkInMinutes > 30)) {
+                status = 'Late';
+            }
+            if (durationHours < 4) {
+                status = 'Half Day';
+            }
+
+            await attendance.update({
+                checkOut: checkOutTime,
+                durationHours: Math.round(durationHours * 10) / 10, // Round to 1 decimal
+                status
+            });
+
+            res.json({ 
+                attendance, 
+                action: 'checked-out',
+                message: 'Checked out successfully',
+                durationHours: Math.round(durationHours * 10) / 10
+            });
+        } else {
+            // Already checked in and out
+            res.status(400).json({ 
+                error: 'Already checked in and out for today',
+                attendance 
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get today's attendance status for an employee
+router.get('/attendance/today/:employeeId', async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const attendance = await AttendanceRecord.findOne({
+            where: {
+                employeeId: req.params.employeeId,
+                date: today
+            },
+            include: [{ model: Employee, attributes: ['id', 'name', 'email'] }]
+        });
+
+        if (!attendance) {
+            return res.json({ 
+                checkedIn: false, 
+                checkedOut: false,
+                attendance: null 
+            });
+        }
+
+        res.json({
+            checkedIn: !!attendance.checkIn,
+            checkedOut: !!attendance.checkOut,
+            attendance
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -546,9 +834,26 @@ router.put('/regularizations/:id', async (req, res) => {
 // Get all payslips
 router.get('/payslips', async (req, res) => {
     try {
-        const { employeeId, month } = req.query;
+        const { employeeId, managerId, month } = req.query;
         const where = {};
-        if (employeeId) where.employeeId = employeeId;
+        
+        // If managerId is provided, get all employees under that manager
+        if (managerId) {
+            const reportees = await Employee.findAll({
+                where: { managerId: managerId },
+                attributes: ['id']
+            });
+            const reporteeIds = reportees.map(emp => emp.id);
+            if (reporteeIds.length > 0) {
+                where.employeeId = { [Op.in]: reporteeIds };
+            } else {
+                // Manager has no reportees, return empty array
+                return res.json([]);
+            }
+        } else if (employeeId) {
+            where.employeeId = employeeId;
+        }
+        
         if (month) where.month = month;
 
         const payslips = await Payslip.findAll({
@@ -562,22 +867,207 @@ router.get('/payslips', async (req, res) => {
     }
 });
 
-// Get payslip by ID
+// Get payslip by ID with detailed breakdown
 router.get('/payslips/:id', async (req, res) => {
     try {
         const payslip = await Payslip.findByPk(req.params.id, {
-            include: [{ model: Employee, attributes: ['id', 'name', 'email'] }]
+            include: [{ model: Employee, attributes: ['id', 'name', 'email', 'department', 'designation', 'salary', 'salaryBreakdown'] }]
         });
         if (!payslip) {
             return res.status(404).json({ error: 'Payslip not found' });
         }
-        res.json(payslip);
+
+        // Calculate breakdown for display
+        const employee = payslip.Employee;
+        let salaryBreakdown = {};
+        if (employee.salaryBreakdown) {
+            try {
+                salaryBreakdown = typeof employee.salaryBreakdown === 'string' 
+                    ? JSON.parse(employee.salaryBreakdown) 
+                    : employee.salaryBreakdown;
+            } catch (e) {
+                console.error('Error parsing salary breakdown:', e);
+            }
+        }
+
+        const grossSalary = payslip.basic + payslip.hra + payslip.allowances;
+        const pfEmployee = Math.min(Math.round(payslip.basic * 0.12), 1800);
+        const esiEmployee = grossSalary < 21000 ? Math.round(grossSalary * 0.0075) : 0;
+        const tds = payslip.deductions - pfEmployee - esiEmployee - (salaryBreakdown.professionalTax || 200) - (salaryBreakdown.otherDeductions || 0);
+
+        res.json({
+            ...payslip.toJSON(),
+            breakdown: {
+                earnings: {
+                    basic: payslip.basic,
+                    hra: payslip.hra,
+                    allowances: payslip.allowances,
+                    grossSalary
+                },
+                deductions: {
+                    pfEmployee,
+                    esiEmployee,
+                    tds,
+                    professionalTax: salaryBreakdown.professionalTax || 200,
+                    otherDeductions: salaryBreakdown.otherDeductions || 0,
+                    totalDeductions: payslip.deductions
+                },
+                netPay: payslip.netPay
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// Create payslip
+// Generate payslip with automatic calculations
+router.post('/payslips/generate', async (req, res) => {
+    try {
+        const { employeeId, month } = req.body; // month format: YYYY-MM
+
+        if (!employeeId || !month) {
+            return res.status(400).json({ error: 'Employee ID and month are required' });
+        }
+
+        // Get employee
+        const employee = await Employee.findByPk(employeeId);
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+
+        // Check if payslip already exists for this month
+        const existingPayslip = await Payslip.findOne({
+            where: { employeeId, month }
+        });
+
+        if (existingPayslip) {
+            return res.status(400).json({ error: 'Payslip already exists for this month' });
+        }
+
+        // Parse salary breakdown from employee record
+        let salaryBreakdown = {};
+        if (employee.salaryBreakdown) {
+            try {
+                salaryBreakdown = typeof employee.salaryBreakdown === 'string' 
+                    ? JSON.parse(employee.salaryBreakdown) 
+                    : employee.salaryBreakdown;
+            } catch (e) {
+                console.error('Error parsing salary breakdown:', e);
+            }
+        }
+
+        // Get annual CTC
+        const annualCTC = employee.salary || 0;
+        const monthlyGross = annualCTC / 12;
+
+        // Calculate salary components (Indian salary structure)
+        // Default structure: Basic (50%), HRA (40% of Basic), Allowances (remaining)
+        const basic = salaryBreakdown.basic || Math.round(monthlyGross * 0.5);
+        const hra = salaryBreakdown.hra || Math.round(basic * 0.4);
+        const specialAllowance = salaryBreakdown.specialAllowance || Math.round(monthlyGross - basic - hra);
+        const otherAllowances = salaryBreakdown.otherAllowances || 0;
+        
+        const grossSalary = basic + hra + specialAllowance + otherAllowances;
+
+        // Calculate PF (Employee contribution: 12% of Basic, max 1800)
+        const pfEmployee = Math.min(Math.round(basic * 0.12), 1800);
+        const pfEmployer = Math.min(Math.round(basic * 0.12), 1800); // Employer contribution
+
+        // Calculate ESI (if applicable - for salary < 21000)
+        let esiEmployee = 0;
+        let esiEmployer = 0;
+        if (grossSalary < 21000) {
+            esiEmployee = Math.round(grossSalary * 0.0075); // 0.75%
+            esiEmployer = Math.round(grossSalary * 0.0325); // 3.25%
+        }
+
+        // Calculate taxable income (after HRA exemption)
+        // HRA exemption calculation (simplified - minimum of: actual HRA, rent paid - 10% of basic, 50% of basic for metro)
+        const hraExemption = Math.min(hra, basic * 0.5); // Simplified: 50% of basic for metro cities
+        const taxableIncome = grossSalary - hraExemption;
+
+        // Calculate TDS (Indian tax calculation - simplified)
+        // Using FY 2023-24 tax slabs
+        const annualTaxableIncome = taxableIncome * 12;
+        let tds = 0;
+
+        if (annualTaxableIncome <= 250000) {
+            tds = 0;
+        } else if (annualTaxableIncome <= 500000) {
+            tds = (annualTaxableIncome - 250000) * 0.05 / 12; // 5% tax
+        } else if (annualTaxableIncome <= 1000000) {
+            tds = (12500 + (annualTaxableIncome - 500000) * 0.20) / 12; // 5% + 20%
+        } else {
+            tds = (112500 + (annualTaxableIncome - 1000000) * 0.30) / 12; // 5% + 20% + 30%
+        }
+
+        // Apply rebate under section 87A (if applicable)
+        if (annualTaxableIncome <= 500000) {
+            const rebate = Math.min(tds * 12, 12500) / 12; // Max rebate 12500
+            tds = Math.max(0, tds - rebate);
+        }
+
+        tds = Math.round(tds);
+
+        // Other deductions
+        const professionalTax = salaryBreakdown.professionalTax || 200; // Standard PT
+        const otherDeductions = salaryBreakdown.otherDeductions || 0;
+
+        // Total deductions
+        const totalDeductions = pfEmployee + esiEmployee + tds + professionalTax + otherDeductions;
+
+        // Net pay
+        const netPay = Math.round(grossSalary - totalDeductions);
+
+        // Create payslip
+        const payslip = await Payslip.create({
+            id: uuidv4(),
+            employeeId,
+            month,
+            basic,
+            hra,
+            allowances: specialAllowance + otherAllowances,
+            deductions: totalDeductions,
+            netPay,
+            generatedDate: new Date().toISOString().split('T')[0]
+        });
+
+        // Return detailed payslip with breakdown
+        res.status(201).json({
+            payslip,
+            breakdown: {
+                earnings: {
+                    basic,
+                    hra,
+                    specialAllowance,
+                    otherAllowances,
+                    grossSalary
+                },
+                deductions: {
+                    pfEmployee,
+                    pfEmployer,
+                    esiEmployee,
+                    esiEmployer,
+                    tds,
+                    professionalTax,
+                    otherDeductions,
+                    totalDeductions
+                },
+                netPay,
+                employerCost: {
+                    grossSalary,
+                    pfEmployer,
+                    esiEmployer,
+                    totalCost: grossSalary + pfEmployer + esiEmployer
+                }
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create payslip (manual)
 router.post('/payslips', async (req, res) => {
     try {
         const { employeeId, month, basic, hra, allowances, deductions, netPay } = req.body;

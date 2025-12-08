@@ -4,10 +4,11 @@ import {
   FileStack, Users, Calculator, TrendingUp, CalendarCheck, Banknote, Bot, Target, 
   FileText as MemoIcon, ChevronDown, ChevronRight, ChevronLeft, Menu, Building2, 
   FolderTree, UserCog, Calendar, MapPin, Code, Globe, BookOpen, Shield, Key, 
-  Workflow, CheckCircle2, UserCheck, Sun, Moon
+  Workflow, CheckCircle2, UserCheck, Sun, Moon, BarChart3, FileSpreadsheet
 } from 'lucide-react';
 import { View } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
   currentView: View;
@@ -30,8 +31,9 @@ interface MenuSection {
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onCollapseChange }) => {
   const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['financial', 'hrms', 'os', 'config', 'security']));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['financial', 'hrms', 'os', 'config', 'security', 'reports']));
 
   const handleToggle = () => {
     const newState = !isCollapsed;
@@ -108,6 +110,20 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onCollapse
         { id: View.SECURITY_USER_ROLES, label: 'User Roles', icon: UserCheck },
         { id: View.SECURITY_APPROVAL_WORKFLOWS, label: 'Approval Workflows', icon: Workflow },
         { id: View.SECURITY_APPROVAL_REQUESTS, label: 'Approval Requests', icon: CheckCircle2 },
+      ]
+    },
+    {
+      id: 'reports',
+      label: 'Reports',
+      icon: BarChart3,
+      items: [
+        { id: View.REPORT_TRIAL_BALANCE, label: 'Trial Balance', icon: FileSpreadsheet },
+        { id: View.REPORT_BALANCE_SHEET, label: 'Balance Sheet', icon: FileSpreadsheet },
+        { id: View.REPORT_PROFIT_LOSS, label: 'Profit & Loss', icon: FileSpreadsheet },
+        { id: View.REPORT_EMPLOYEE_DIRECTORY, label: 'Employee Directory', icon: FileSpreadsheet },
+        { id: View.REPORT_ATTENDANCE, label: 'Attendance Report', icon: FileSpreadsheet },
+        { id: View.REPORT_LEAVES, label: 'Leave Report', icon: FileSpreadsheet },
+        { id: View.REPORT_PAYROLL, label: 'Payroll Report', icon: FileSpreadsheet },
       ]
     }
   ];
@@ -267,6 +283,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onCollapse
             {!isCollapsed && <span>Settings</span>}
           </button>
           <button 
+            onClick={async () => {
+              await logout();
+              window.location.reload();
+            }}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} px-3 py-2 text-red-400 hover:text-red-300 text-sm font-medium hover:bg-slate-800 rounded-lg transition-colors`}
             title="Logout"
           >

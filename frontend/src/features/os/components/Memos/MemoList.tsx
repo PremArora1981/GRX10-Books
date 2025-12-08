@@ -70,7 +70,7 @@ export const MemoList: React.FC = () => {
                     </span>
                 </div>
                 <p className="mt-3 text-gray-600 dark:text-gray-300 text-sm line-clamp-2">
-                    {memo.sections.problem}
+                    {memo.summary || 'No summary available'}
                 </p>
             </div>
         ))}

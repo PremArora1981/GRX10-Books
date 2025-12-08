@@ -35,13 +35,19 @@ export const Dashboard: React.FC = () => {
   ];
   const COLORS = ['#ef4444', '#3b82f6', '#10b981'];
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-slate-500 dark:text-slate-400">Loading dashboard...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Welcome back, {user.name.split(' ')[0]} 👋</h2>
-        <p className="text-slate-500">Here's what's happening today.</p>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Welcome back, {user.name?.split(' ')[0] || 'User'} 👋</h2>
+        <p className="text-slate-500 dark:text-slate-400">Here's what's happening today.</p>
       </div>
 
       {/* Summary Cards */}

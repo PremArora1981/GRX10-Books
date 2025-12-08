@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Save, X, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useConfiguration } from '../../contexts/ConfigurationContext';
+import { validateForm, ValidationErrors, commonRules } from '../../utils/validation';
 
 export interface ConfigItem {
   id: string;
@@ -38,6 +39,7 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
   const [formData, setFormData] = useState<Partial<ConfigItem>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterActive, setFilterActive] = useState(true);
+  const [errors, setErrors] = useState<ValidationErrors>({});
 
   useEffect(() => {
     fetchItems();
@@ -50,18 +52,42 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
         ? `/api/config/${apiEndpoint}?activeOnly=true`
         : `/api/config/${apiEndpoint}`;
       const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch: ${response.statusText}`);
+      }
       const data = await response.json();
       setItems(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching items:', error);
-      alert('Failed to load items');
+      alert(error.message || 'Failed to load items');
     } finally {
       setLoading(false);
     }
   };
 
   const handleAdd = async () => {
+    // Validate form
+    const validationRules: Record<string, any> = {};
+    fields.forEach(field => {
+      if (field.required) {
+        validationRules[field.key] = { required: true };
+        if (field.type === 'email') {
+          validationRules[field.key] = { ...validationRules[field.key], email: true };
+        }
+        if (field.type === 'number') {
+          validationRules[field.key] = { ...validationRules[field.key], number: true, min: 0 };
+        }
+      }
+    });
+
+    const validationErrors = validateForm(formData, validationRules);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+
+    setErrors({});
     try {
       const response = await fetch(`/api/config/${apiEndpoint}`, {
         method: 'POST',
@@ -75,6 +101,7 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
       await fetchItems();
       setShowAddForm(false);
       setFormData({});
+      setErrors({});
       await refreshConfig(); // Refresh global configuration context
       onItemChange?.();
     } catch (error: any) {
@@ -83,6 +110,27 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
   };
 
   const handleUpdate = async (id: string) => {
+    // Validate form
+    const validationRules: Record<string, any> = {};
+    fields.forEach(field => {
+      if (field.required) {
+        validationRules[field.key] = { required: true };
+        if (field.type === 'email') {
+          validationRules[field.key] = { ...validationRules[field.key], email: true };
+        }
+        if (field.type === 'number') {
+          validationRules[field.key] = { ...validationRules[field.key], number: true, min: 0 };
+        }
+      }
+    });
+
+    const validationErrors = validateForm(formData, validationRules);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+
+    setErrors({});
     try {
       const response = await fetch(`/api/config/${apiEndpoint}/${id}`, {
         method: 'PUT',
@@ -96,6 +144,7 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
       await fetchItems();
       setEditingId(null);
       setFormData({});
+      setErrors({});
       await refreshConfig(); // Refresh global configuration context
       onItemChange?.();
     } catch (error: any) {
@@ -142,6 +191,7 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
   const cancelEdit = () => {
     setEditingId(null);
     setFormData({});
+    setErrors({});
   };
 
   if (loading) {
@@ -192,9 +242,20 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
                 </label>
                 {field.type === 'select' ? (
                   <select
-                    className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none"
+                    className={`w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none ${
+                      errors[field.key] 
+                        ? 'border-red-300 dark:border-red-700 bg-white dark:bg-slate-700' 
+                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                    } text-slate-900 dark:text-slate-100`}
                     value={formData[field.key] || ''}
-                    onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                    onChange={e => {
+                      setFormData({ ...formData, [field.key]: e.target.value });
+                      if (errors[field.key]) {
+                        const newErrors = { ...errors };
+                        delete newErrors[field.key];
+                        setErrors(newErrors);
+                      }
+                    }}
                   >
                     <option value="">Select {field.label}</option>
                     {field.options?.map(opt => (
@@ -204,18 +265,46 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
                 ) : field.type === 'textarea' ? (
                   <textarea
                     rows={3}
-                    className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none"
+                    className={`w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none ${
+                      errors[field.key] 
+                        ? 'border-red-300 dark:border-red-700 bg-white dark:bg-slate-700' 
+                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                    } text-slate-900 dark:text-slate-100`}
                     value={formData[field.key] || ''}
-                    onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                    onChange={e => {
+                      setFormData({ ...formData, [field.key]: e.target.value });
+                      if (errors[field.key]) {
+                        const newErrors = { ...errors };
+                        delete newErrors[field.key];
+                        setErrors(newErrors);
+                      }
+                    }}
                   />
                 ) : (
                   <input
                     type={field.type}
-                    className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none"
+                    className={`w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none ${
+                      errors[field.key] 
+                        ? 'border-red-300 dark:border-red-700 bg-white dark:bg-slate-700' 
+                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                    } text-slate-900 dark:text-slate-100`}
                     value={formData[field.key] || ''}
-                    onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                    onChange={e => {
+                      setFormData({ ...formData, [field.key]: e.target.value });
+                      if (errors[field.key]) {
+                        const newErrors = { ...errors };
+                        delete newErrors[field.key];
+                        setErrors(newErrors);
+                      }
+                    }}
                     required={field.required}
                   />
+                )}
+                {errors[field.key] && (
+                  <div className="mt-1 flex items-center gap-1 text-sm text-red-600 dark:text-red-400">
+                    <AlertCircle size={14} />
+                    <span>{errors[field.key]}</span>
+                  </div>
                 )}
               </div>
             ))}
@@ -225,6 +314,7 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
               onClick={() => {
                 setShowAddForm(false);
                 setFormData({});
+                setErrors({});
               }}
               className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
             >
@@ -269,12 +359,23 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
                     {editingId === item.id ? (
                       <>
                         {fields.map(field => (
-                          <td key={field.key} className="px-6 py-4">
+                          <td key={field.key} className="px-6 py-4 max-w-xs">
                             {field.type === 'select' ? (
                               <select
-                                className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none"
+                                className={`w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none ${
+                                  errors[field.key] 
+                                    ? 'border-red-300 dark:border-red-700 bg-white dark:bg-slate-700' 
+                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                                } text-slate-900 dark:text-slate-100`}
                                 value={formData[field.key] || ''}
-                                onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                                onChange={e => {
+                                  setFormData({ ...formData, [field.key]: e.target.value });
+                                  if (errors[field.key]) {
+                                    const newErrors = { ...errors };
+                                    delete newErrors[field.key];
+                                    setErrors(newErrors);
+                                  }
+                                }}
                               >
                                 <option value="">Select {field.label}</option>
                                 {field.options?.map(opt => (
@@ -284,17 +385,44 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
                             ) : field.type === 'textarea' ? (
                               <textarea
                                 rows={2}
-                                className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none"
+                                className={`w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none ${
+                                  errors[field.key] 
+                                    ? 'border-red-300 dark:border-red-700 bg-white dark:bg-slate-700' 
+                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                                } text-slate-900 dark:text-slate-100`}
                                 value={formData[field.key] || ''}
-                                onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                                onChange={e => {
+                                  setFormData({ ...formData, [field.key]: e.target.value });
+                                  if (errors[field.key]) {
+                                    const newErrors = { ...errors };
+                                    delete newErrors[field.key];
+                                    setErrors(newErrors);
+                                  }
+                                }}
                               />
                             ) : (
                               <input
                                 type={field.type}
-                                className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none"
+                                className={`w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none ${
+                                  errors[field.key] 
+                                    ? 'border-red-300 dark:border-red-700 bg-white dark:bg-slate-700' 
+                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                                } text-slate-900 dark:text-slate-100`}
                                 value={formData[field.key] || ''}
-                                onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                                onChange={e => {
+                                  setFormData({ ...formData, [field.key]: e.target.value });
+                                  if (errors[field.key]) {
+                                    const newErrors = { ...errors };
+                                    delete newErrors[field.key];
+                                    setErrors(newErrors);
+                                  }
+                                }}
                               />
+                            )}
+                            {errors[field.key] && (
+                              <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                                {errors[field.key]}
+                              </div>
                             )}
                           </td>
                         ))}
@@ -330,8 +458,10 @@ export const ConfigManager: React.FC<ConfigManagerProps> = ({
                     ) : (
                       <>
                         {fields.map(field => (
-                          <td key={field.key} className="px-6 py-4 text-sm text-slate-900 dark:text-slate-100">
-                            {item[field.key] || '-'}
+                          <td key={field.key} className="px-6 py-4 text-sm text-slate-900 dark:text-slate-100 max-w-xs">
+                            <div className="truncate" title={String(item[field.key] || '-')}>
+                              {item[field.key] || '-'}
+                            </div>
                           </td>
                         ))}
                         <td className="px-6 py-4">
