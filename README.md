@@ -144,9 +144,25 @@ npm run db:seed
 ```
 
 This creates:
-- 3 Sample Customers
-- 6 Sample Ledgers (Chart of Accounts)
-- 1 Admin User (username: `admin`, password: `admin123`)
+- **Configuration Data:**
+  - 2 Organizations
+  - 10 Departments
+  - 20 Positions
+  - 5 HRMS Roles
+  - 6 Employee Types
+  - 20 Holidays (2024-2025)
+  - 10 Leave Types
+  - 7 Work Locations
+  - 28 Skills
+  - 17 Languages
+  - 48 Chart of Accounts entries
+- **Sample Data:**
+  - 3 Sample Customers
+  - 6 Sample Ledgers
+  - 5 Sample Employees (including admin)
+  - 105+ Attendance Records (last 30 days for all employees)
+  - 2 Sample Leave Requests
+  - 2 Sample Regularization Requests
 
 ### 5. Run the Application
 
@@ -174,11 +190,11 @@ Frontend will be available at `http://localhost:8100`
 - **Transactions** - Accounting transactions (date, description, amount, type, ledger)
 
 ### HRMS Tables
-- **Employees** - Employee information with comprehensive fields
+- **Employees** - Employee information with comprehensive fields (also used for authentication)
 - **LeaveRequests** - Leave request management
-- **AttendanceRecords** - Attendance tracking
+- **AttendanceRecords** - Attendance tracking with check-in/check-out
 - **RegularizationRequests** - Attendance regularization
-- **Payslips** - Payroll processing
+- **Payslips** - Payroll processing with automatic calculations
 - **EmployeeHiringHistory** - Employee rehire tracking
 
 ### OS Tables
@@ -213,20 +229,35 @@ Frontend will be available at `http://localhost:8100`
 - **ApprovalHistory** - Approval audit trail
 
 ### System Tables
-- **Users** - User accounts (username, email, password, role)
+- **Users** - Legacy user accounts (used primarily for OAuth mapping; all authentication now uses Employees table)
 
 See `backend/database/setup.sql` for complete schema.
 
 ## 🔐 Authentication
 
-### Admin Login
-- **Default Credentials:** `admin` / `admin123`
-- Stored in database (Users table)
-- Can be changed via environment variables or database
+### Employee Login (All Users)
+- **All employees login through the Employee table** (including admin)
+- **Admin Employee:** 
+  - Email: `admin@grx10.com`
+  - Password: `admin123`
+  - ID: `admin-001`
+- **Other Sample Employees:**
+  - Alice Carter (HR): `alice@grx10.com` / `password123`
+  - Bob Smith (Manager): `bob@grx10.com` / `password123`
+  - Charlie Davis (Employee): `charlie@grx10.com` / `password123`
+  - Diana Evans (Finance): `diana@grx10.com` / `password123`
+  - Ethan Hunt (Employee): `ethan@grx10.com` / `password123`
 
-### Microsoft OAuth
+### Microsoft OAuth (Optional)
 - Configure `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, and `MICROSOFT_TENANT_ID`
 - Email whitelist configured in `backend/src/auth/auth.routes.js`
+- OAuth users are mapped to Employee records by email
+
+### Role-Based Access Control
+- **Admin/HR:** See all records (Attendance, Leaves, Payroll)
+- **Manager:** See records of their direct reportees
+- **Employee:** See only their own records
+- **Finance:** See all payroll records
 
 ## 🛠️ Available Scripts
 
@@ -317,19 +348,22 @@ Set all required environment variables in your deployment platform:
 
 ## ⚙️ Configuration System
 
-The application includes a comprehensive configuration system accessible via the sidebar. Before using the application, you must set up:
+The application includes a comprehensive configuration system accessible via the sidebar. **You can either set up manually or use the seed script (`npm run db:seed`) to populate all configuration data automatically.**
 
+### Configuration Items:
 1. **Organizations** - At least one organization
 2. **Departments** - Company departments
 3. **Positions** - Job positions
-4. **Roles** - HRMS roles
-5. **Employee Types** - Full Time, Part Time, Contract
+4. **HRMS Roles** - Business roles (HR, Manager, Employee, Finance, Admin)
+5. **Employee Types** - Full Time, Part Time, Contract, Intern, Consultant, Temporary
 6. **Work Locations** - Office locations
-7. **Holidays** - Company holiday calendar
-8. **Leave Types** - Leave type definitions
-9. **Chart of Accounts** - Financial account structure
+7. **Holidays** - Company holiday calendar (Indian holidays included in seed data)
+8. **Leave Types** - Leave type definitions (Indian leave types: CL, SL, EL, CO, LWP, ML, PL, etc.)
+9. **Skills** - Skills catalog (Technical, Soft, Domain skills)
+10. **Languages** - Languages catalog
+11. **Chart of Accounts** - Financial account structure
 
-All dropdowns throughout the application use these configurations. See [Implementation Guide](./userdocs/IMPLEMENTATION_GUIDE.md) for detailed setup instructions.
+All dropdowns throughout the application use these configurations. The seed script automatically creates all configuration data with realistic sample values. See [Implementation Guide](./userdocs/IMPLEMENTATION_GUIDE.md) for detailed setup instructions.
 
 ## 🔐 Security & Role Management
 
@@ -343,12 +377,60 @@ The application includes a comprehensive role-based access control (RBAC) system
 
 See [Security Implementation Guide](./userdocs/SECURITY_IMPLEMENTATION.md) for detailed setup and usage instructions.
 
+## 🎨 Features
+
+### Dark Mode
+- Toggle between light and dark themes
+- Theme preference is saved in localStorage
+- All screens support dark mode
+
+### Role-Based Data Access
+- **Attendance, Leaves, Payroll** pages automatically filter data based on user role:
+  - Admin/HR: View all records
+  - Manager: View team records (direct reportees)
+  - Employee: View own records only
+- Employee name column appears automatically when viewing multiple employees' data
+
+### Form Validation
+- Comprehensive form validation for all input forms
+- Real-time error display
+- Validation rules for required fields, dates, numbers, etc.
+
+### Reports
+- **Financial Reports:** Trial Balance, Balance Sheet, Profit & Loss
+- **HR Reports:** Employee Directory, Attendance Summary, Leave Summary, Payroll Summary
+
 ## 📝 Notes
 
-- Passwords are currently stored as plain text. For production, implement bcrypt hashing (marked with `TODO` in code).
-- The application uses session-based authentication with Passport.js.
-- Database tables are auto-created via `sequelize.sync({ alter: true })` on server start.
-- Configuration items must be set up before creating employees or invoices.
+### Authentication
+- **All employees (including admin) login through the Employee table.** The Users table is primarily for OAuth mapping.
+- **Admin Employee:** Email `admin@grx10.com`, Password `admin123`, ID `admin-001`
+- Login endpoint: `/api/auth/admin/login` (accepts email or employee ID as username)
+- Session-based authentication with Passport.js
+
+### Security
+- **Passwords:** Currently stored as plain text. For production, implement bcrypt hashing (marked with `TODO` in code).
+- **Role-Based Access:** Data is automatically filtered based on user role (Admin/HR see all, Manager sees reportees, Employee sees own)
+
+### Database
+- Tables are auto-created via `sequelize.sync({ alter: true })` on server start
+- **Seed Data:** Running `npm run db:seed` creates:
+  - All configuration data (Organizations, Departments, Positions, etc.)
+  - 5 Sample Employees (including admin)
+  - 105+ Attendance Records (last 30 working days)
+  - Sample Leave Requests and Regularization Requests
+  - Sample Customers and Ledgers
+
+### Configuration
+- Configuration items must be set up before creating employees or invoices
+- Use the seed script (`npm run db:seed`) to populate all configuration data automatically
+- All dropdowns throughout the application use these configurations
+
+### UI/UX
+- **Dark Mode:** Fully implemented across all screens
+- **Form Validation:** Real-time validation with error messages
+- **Responsive Design:** Works on desktop and tablet devices
+- **User-Friendly:** All screens maintain their structure even when data is loading or empty
 
 ## 📄 License
 
