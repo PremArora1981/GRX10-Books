@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../shared/components/layout/Sidebar';
 import DashboardPage from '../features/dashboard/pages/DashboardPage';
+import MainDashboard from '../features/dashboard/pages/MainDashboard';
+import FinanceDashboard from '../features/dashboard/pages/FinanceDashboard';
 import InvoicesPage from '../features/invoices/pages/InvoicesPage';
 import MigrationPage from '../features/migration/pages/MigrationPage';
 import AiAssistantPage from '../features/ai-assistant/pages/AiAssistantPage';
@@ -122,8 +124,14 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+    // Show Finance Dashboard for Finance users, Main Dashboard for others
+    const isFinanceUser = user?.role === 'Finance';
+    
     switch (currentView) {
-      case View.DASHBOARD: return <DashboardPage invoices={invoices} />;
+      case View.DASHBOARD: 
+        return isFinanceUser 
+          ? <FinanceDashboard onChangeView={setCurrentView} />
+          : <MainDashboard onChangeView={setCurrentView} />;
       case View.INVOICES: return <InvoicesPage invoices={invoices} onCreateInvoice={handleAddInvoice} initialTemplateId={selectedTemplate} />;
       case View.MIGRATION: return <MigrationPage onImport={handleImport} />;
       case View.ASSISTANT: return <AiAssistantPage invoices={invoices} />;

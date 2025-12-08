@@ -49,20 +49,33 @@ passport.use(new MicrosoftStrategy({
                 return done(null, false, { message: 'No email found in profile.' });
             }
 
-            if (!ALLOWED_EMAILS.includes(email)) {
-                console.log(`🚫 Access denied for: ${email}`);
-                return done(null, false, { message: 'Access denied. You are not authorized.' });
+            // Look up employee by email in Employee table
+            const employee = await Employee.findOne({
+                where: {
+                    email: email.toLowerCase(),
+                    status: 'Active'
+                }
+            });
+
+            if (!employee) {
+                console.log(`🚫 Access denied: Employee not found or inactive for email: ${email}`);
+                return done(null, false, { message: 'Access denied. Employee not found or account is inactive.' });
             }
 
-            console.log(`✅ User authenticated: ${email}`);
-            // In a real app, you might find/create a user in your DB here
-            const user = {
-                id: profile.id,
-                displayName: profile.displayName,
-                email: email
+            console.log(`✅ SSO authentication successful for employee: ${employee.email} (${employee.id})`);
+
+            // Create session user object from employee (same structure as email/password login)
+            const sessionUser = {
+                id: employee.id,
+                name: employee.name,
+                email: employee.email,
+                role: employee.role, // 'Admin', 'HR', 'Manager', 'Employee', 'Finance'
+                isAdmin: employee.role === 'Admin' || employee.role === 'HR'
             };
-            return done(null, user);
+
+            return done(null, sessionUser);
         } catch (err) {
+            console.error('SSO authentication error:', err);
             return done(err);
         }
     }
@@ -123,6 +136,11 @@ router.post('/admin/login', async (req, res) => {
 
         if (!employee) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Check if email/password login is enabled for this employee
+        if (!employee.enableEmailLogin) {
+            return res.status(403).json({ error: 'Email/password login is disabled for this account. Please use SSO login.' });
         }
 
         // Check password (for now, compare plain text - TODO: implement bcrypt hashing)

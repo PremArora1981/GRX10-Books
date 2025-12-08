@@ -19,6 +19,7 @@ import osRoutes from './modules/os/os.routes.js';
 import configRoutes from './modules/config/config.routes.js';
 import securityRoutes from './modules/security/security.routes.js';
 import reportsRoutes from './modules/reports/reports.routes.js';
+import dashboardRoutes from './modules/dashboard/dashboard.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +68,7 @@ app.use('/api/os', osRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

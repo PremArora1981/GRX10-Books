@@ -83,7 +83,7 @@ async function seedDatabase() {
         // Seed HRMS Employees
         console.log('📝 Seeding HRMS Employees...');
         const employees = [
-            { id: 'admin-001', name: 'Administrator', email: 'admin@grx10.com', role: 'Admin', department: 'Administration', designation: 'System Administrator', joinDate: '2020-01-01', avatar: 'https://picsum.photos/199', salary: 150000, status: 'Active', password: 'admin123', isNewUser: false, managerId: null },
+            { id: 'admin-001', name: 'Administrator', email: 'admin@grx10.com', role: 'Admin', department: 'Administration', designation: 'System Administrator', joinDate: '2020-01-01', avatar: 'https://picsum.photos/199', salary: 150000, status: 'Active', password: 'admin123', enableEmailLogin: true, isNewUser: false, managerId: null },
             { id: 'EMP001', name: 'Alice Carter', email: 'alice@grx10.com', role: 'HR', department: 'Human Resources', designation: 'HR Manager', joinDate: '2022-01-15', avatar: 'https://picsum.photos/200', salary: 85000, status: 'Active', password: 'password123', isNewUser: false, managerId: 'admin-001' },
             { id: 'EMP002', name: 'Bob Smith', email: 'bob@grx10.com', role: 'Manager', department: 'Engineering', designation: 'Tech Lead', joinDate: '2021-05-20', avatar: 'https://picsum.photos/201', salary: 120000, status: 'Active', password: 'password123', isNewUser: false, managerId: 'admin-001' },
             { id: 'EMP003', name: 'Charlie Davis', email: 'charlie@grx10.com', role: 'Employee', department: 'Engineering', designation: 'Frontend Engineer', joinDate: '2023-02-10', managerId: 'EMP002', avatar: 'https://picsum.photos/202', salary: 90000, status: 'Active', password: 'password123', isNewUser: false },

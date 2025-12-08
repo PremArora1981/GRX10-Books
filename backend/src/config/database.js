@@ -218,6 +218,7 @@ const Employee = sequelize.define('Employee', {
     managerId: { type: DataTypes.STRING },
     salary: { type: DataTypes.FLOAT }, // Annual CTC
     password: { type: DataTypes.STRING }, // For direct login (should be hashed in production)
+    enableEmailLogin: { type: DataTypes.BOOLEAN, defaultValue: true }, // Allow email/password login (if false, only SSO)
     isNewUser: { type: DataTypes.BOOLEAN, defaultValue: false },
     // Additional Traditional HR Fields
     workLocation: { type: DataTypes.STRING },

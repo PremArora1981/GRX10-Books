@@ -153,10 +153,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onCollapse
       <div className={`border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'p-4' : 'p-6'}`}>
         {!isCollapsed ? (
           <div className="flex items-center justify-between">
-            <div>
+            <button
+              onClick={() => onChangeView(View.DASHBOARD)}
+              className="text-left hover:opacity-80 transition-opacity cursor-pointer"
+            >
               <h1 className="text-2xl font-bold text-emerald-400 tracking-tight">GRX10</h1>
               <p className="text-xs text-slate-400 mt-1">Financial Suite</p>
-            </div>
+            </button>
             <button
               onClick={handleToggle}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
@@ -167,7 +170,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onCollapse
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <h1 className="text-xl font-bold text-emerald-400 tracking-tight">G</h1>
+            <button
+              onClick={() => onChangeView(View.DASHBOARD)}
+              className="text-xl font-bold text-emerald-400 tracking-tight hover:opacity-80 transition-opacity cursor-pointer"
+            >
+              G
+            </button>
             <button
               onClick={handleToggle}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"

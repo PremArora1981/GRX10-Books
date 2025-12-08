@@ -278,8 +278,8 @@ ON CONFLICT ("id") DO NOTHING;
 -- ============================================
 -- Sample Employees (for attendance records)
 -- ============================================
-INSERT INTO "Employees" ("id", "name", "email", "role", "department", "designation", "joinDate", "status", "managerId", "createdAt", "updatedAt") VALUES
-('admin-001', 'Administrator', 'admin@grx10.com', 'Admin', 'Administration', 'System Administrator', '2020-01-01', 'Active', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+INSERT INTO "Employees" ("id", "name", "email", "role", "department", "designation", "joinDate", "status", "password", "enableEmailLogin", "managerId", "createdAt", "updatedAt") VALUES
+('admin-001', 'Administrator', 'admin@grx10.com', 'Admin', 'Administration', 'System Administrator', '2020-01-01', 'Active', 'admin123', true, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('EMP001', 'Alice Carter', 'alice@grx10.com', 'HR', 'Human Resources', 'HR Manager', '2022-01-15', 'Active', 'admin-001', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('EMP002', 'Bob Smith', 'bob@grx10.com', 'Manager', 'Engineering', 'Tech Lead', '2021-05-20', 'Active', 'admin-001', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('EMP003', 'Charlie Davis', 'charlie@grx10.com', 'Employee', 'Engineering', 'Frontend Engineer', '2023-02-10', 'Active', 'EMP002', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
