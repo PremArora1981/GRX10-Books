@@ -1,5 +1,5 @@
 # Use an official Node.js runtime as a parent image
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Set the working directory to /app
 WORKDIR /app
@@ -14,6 +14,7 @@ COPY frontend/src ./src
 # COPY frontend/public ./public
 COPY frontend/vite.config.ts ./vite.config.ts
 COPY frontend/tsconfig.json ./tsconfig.json
+COPY frontend/index.html ./
 RUN npm run build
 
 # Move to backend and install dependencies
