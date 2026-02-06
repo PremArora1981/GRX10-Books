@@ -672,7 +672,7 @@ const SalaryChangeLog = sequelize.define('SalaryChangeLog', {
 });
 
 // Audit Log - records admin/HR actions for compliance (P1-11)
-const AuditLog = sequelize.define('AuditLog', {
+const HRMSAuditLog = sequelize.define('HRMSAuditLog', {
     id: { type: DataTypes.STRING, primaryKey: true },
     userId: { type: DataTypes.STRING, allowNull: false }, // Who performed the action
     action: { type: DataTypes.STRING, allowNull: false }, // e.g. 'EMPLOYEE_CREATE', 'SALARY_UPDATE', 'LEAVE_APPROVE'
@@ -924,6 +924,7 @@ export {
     ApprovalRequest,
     ApprovalHistory,
     // Audit & History Models
+    HRMSAuditLog,
     SalaryChangeLog,
     // Notification Model
     HRMSNotification,
