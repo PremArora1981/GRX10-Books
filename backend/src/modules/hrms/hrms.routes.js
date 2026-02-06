@@ -10,6 +10,7 @@ import {
     RegularizationRequest,
     Payslip,
     LeaveType,
+    ShiftTiming,
     WorkLocation,
     ProfessionalTaxSlab,
     Holiday
@@ -1272,6 +1273,25 @@ router.post('/attendance/checkin', async (req, res) => {
             return res.status(403).json({ error: 'You can only check in for yourself' });
         }
 
+        // Get default shift timing or use fallback
+        const defaultShift = await ShiftTiming.findOne({
+            where: { isDefault: true, isActive: true }
+        });
+
+        // Fallback shift configuration if no shift defined
+        const shiftConfig = defaultShift || {
+            startTime: '09:00',
+            endTime: '18:00',
+            graceMinutes: 15,
+            halfDayHours: 4,
+            fullDayHours: 8
+        };
+
+        // Parse shift start time
+        const [shiftStartHours, shiftStartMinutes] = shiftConfig.startTime.split(':').map(Number);
+        const shiftStartTotalMinutes = shiftStartHours * 60 + shiftStartMinutes;
+        const lateThresholdMinutes = shiftStartTotalMinutes + (shiftConfig.graceMinutes || 15);
+
         // Use IST timezone for Indian operations
         const now = new Date();
         const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
@@ -1289,18 +1309,29 @@ router.post('/attendance/checkin', async (req, res) => {
 
         if (!attendance) {
             // Check-in: Create new attendance record
+            const [currentHours, currentMinutes] = currentTime.split(':').map(Number);
+            const currentTotalMinutes = currentHours * 60 + currentMinutes;
+
+            // Determine initial status based on check-in time
+            let initialStatus = 'Present';
+            if (currentTotalMinutes > lateThresholdMinutes) {
+                initialStatus = 'Late';
+            }
+
             attendance = await AttendanceRecord.create({
                 id: uuidv4(),
                 employeeId: targetEmployeeId,
                 date: today,
                 checkIn: currentTime,
-                status: 'Present',
+                status: initialStatus,
                 durationHours: null
             });
             res.status(201).json({
                 attendance,
                 action: 'checked-in',
-                message: 'Checked in successfully'
+                message: initialStatus === 'Late' ? 'Checked in (Late)' : 'Checked in successfully',
+                shiftStart: shiftConfig.startTime,
+                graceMinutes: shiftConfig.graceMinutes || 15
             });
         } else if (attendance.checkIn && !attendance.checkOut) {
             // Check-out: Update existing record
@@ -1314,13 +1345,22 @@ router.post('/attendance/checkin', async (req, res) => {
             const durationMinutes = checkOutTotalMinutes - checkInTotalMinutes;
             const durationHours = durationMinutes / 60;
 
-            // Determine status based on check-in time (late if after 9:30 AM)
+            // Determine status based on shift configuration
             let status = 'Present';
-            if (checkInHours > 9 || (checkInHours === 9 && checkInMinutes > 30)) {
+            const halfDayThreshold = shiftConfig.halfDayHours || 4;
+            const fullDayThreshold = shiftConfig.fullDayHours || 8;
+
+            // Check if was late
+            if (checkInTotalMinutes > lateThresholdMinutes) {
                 status = 'Late';
             }
-            if (durationHours < 4) {
+
+            // Check for half day based on duration
+            if (durationHours < halfDayThreshold) {
                 status = 'Half Day';
+            } else if (durationHours >= halfDayThreshold && durationHours < fullDayThreshold && status !== 'Late') {
+                // Between half and full day but not late
+                status = 'Present';
             }
 
             await attendance.update({
@@ -1333,7 +1373,11 @@ router.post('/attendance/checkin', async (req, res) => {
                 attendance,
                 action: 'checked-out',
                 message: 'Checked out successfully',
-                durationHours: Math.round(durationHours * 10) / 10
+                durationHours: Math.round(durationHours * 10) / 10,
+                shiftConfig: {
+                    halfDayHours: halfDayThreshold,
+                    fullDayHours: fullDayThreshold
+                }
             });
         } else {
             // Already checked in and out
@@ -1381,6 +1425,217 @@ router.get('/attendance/today/:employeeId', requireEmployeeAccess(req => req.par
     } catch (error) {
         console.error('Error fetching today\'s attendance:', error);
         res.status(500).json({ error: 'Failed to fetch attendance status' });
+    }
+});
+
+// Get monthly attendance summary for an employee
+router.get('/attendance/summary/:employeeId', requireEmployeeAccess(req => req.params.employeeId), async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        const { month } = req.query; // YYYY-MM format
+
+        // Default to current month
+        const now = new Date();
+        const targetMonth = month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const [year, monthNum] = targetMonth.split('-').map(Number);
+
+        // Calculate date range for the month
+        const startDate = `${targetMonth}-01`;
+        const lastDay = new Date(year, monthNum, 0).getDate();
+        const endDate = `${targetMonth}-${String(lastDay).padStart(2, '0')}`;
+
+        // Get employee
+        const employee = await Employee.findByPk(employeeId);
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+
+        // Get attendance records for the month
+        const attendanceRecords = await AttendanceRecord.findAll({
+            where: {
+                employeeId,
+                date: { [Op.between]: [startDate, endDate] }
+            },
+            order: [['date', 'ASC']]
+        });
+
+        // Get holidays for the month
+        const holidays = await Holiday.findAll({
+            where: {
+                date: { [Op.between]: [startDate, endDate] },
+                isActive: true,
+                type: { [Op.ne]: 'Optional' }
+            }
+        });
+        const holidayDates = new Set(holidays.map(h => h.date));
+
+        // Get approved leaves for the month
+        const approvedLeaves = await LeaveRequest.findAll({
+            where: {
+                employeeId,
+                status: 'Approved',
+                [Op.or]: [
+                    { startDate: { [Op.between]: [startDate, endDate] } },
+                    { endDate: { [Op.between]: [startDate, endDate] } }
+                ]
+            }
+        });
+
+        // Build leave dates set
+        const leaveDates = new Set();
+        approvedLeaves.forEach(leave => {
+            const start = new Date(leave.startDate);
+            const end = new Date(leave.endDate);
+            const current = new Date(start);
+            while (current <= end) {
+                const dateStr = current.toISOString().split('T')[0];
+                if (dateStr >= startDate && dateStr <= endDate) {
+                    leaveDates.add(dateStr);
+                }
+                current.setDate(current.getDate() + 1);
+            }
+        });
+
+        // Build attendance map
+        const attendanceMap = new Map();
+        attendanceRecords.forEach(record => {
+            attendanceMap.set(record.date, record);
+        });
+
+        // Calculate summary
+        let workingDays = 0;
+        let presentDays = 0;
+        let lateDays = 0;
+        let halfDays = 0;
+        let absentDays = 0;
+        let leaveDaysCount = 0;
+        let holidayCount = 0;
+        let weekendCount = 0;
+        let totalHours = 0;
+        let wfhDays = 0;
+
+        const dailyRecords = [];
+
+        // Iterate through each day of the month
+        const current = new Date(startDate);
+        const endDateObj = new Date(endDate);
+        while (current <= endDateObj) {
+            const dateStr = current.toISOString().split('T')[0];
+            const dayOfWeek = current.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            const isHoliday = holidayDates.has(dateStr);
+            const isOnLeave = leaveDates.has(dateStr);
+            const attendance = attendanceMap.get(dateStr);
+
+            let dayStatus = 'Not Marked';
+
+            if (isWeekend) {
+                dayStatus = 'Weekend';
+                weekendCount++;
+            } else if (isHoliday) {
+                dayStatus = 'Holiday';
+                holidayCount++;
+            } else if (isOnLeave) {
+                dayStatus = 'On Leave';
+                leaveDaysCount++;
+            } else {
+                workingDays++;
+
+                if (attendance) {
+                    switch (attendance.status) {
+                        case 'Present':
+                            presentDays++;
+                            dayStatus = 'Present';
+                            break;
+                        case 'Late':
+                            presentDays++;
+                            lateDays++;
+                            dayStatus = 'Late';
+                            break;
+                        case 'Half Day':
+                            halfDays++;
+                            dayStatus = 'Half Day';
+                            break;
+                        case 'WFH':
+                            presentDays++;
+                            wfhDays++;
+                            dayStatus = 'WFH';
+                            break;
+                        case 'Absent':
+                            absentDays++;
+                            dayStatus = 'Absent';
+                            break;
+                        default:
+                            presentDays++;
+                            dayStatus = attendance.status;
+                    }
+
+                    if (attendance.durationHours) {
+                        totalHours += attendance.durationHours;
+                    }
+                } else {
+                    // No attendance record - only mark as absent for past dates
+                    if (current < now) {
+                        absentDays++;
+                        dayStatus = 'Absent';
+                    } else {
+                        dayStatus = 'Upcoming';
+                    }
+                }
+            }
+
+            dailyRecords.push({
+                date: dateStr,
+                dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek],
+                status: dayStatus,
+                checkIn: attendance?.checkIn || null,
+                checkOut: attendance?.checkOut || null,
+                durationHours: attendance?.durationHours || null
+            });
+
+            current.setDate(current.getDate() + 1);
+        }
+
+        // Calculate attendance percentage
+        const effectiveWorkingDays = workingDays - leaveDaysCount;
+        const attendancePercentage = effectiveWorkingDays > 0
+            ? Math.round((presentDays + halfDays * 0.5) / effectiveWorkingDays * 100 * 10) / 10
+            : 0;
+
+        res.json({
+            employeeId,
+            employeeName: employee.name,
+            month: targetMonth,
+            summary: {
+                totalDays: lastDay,
+                workingDays,
+                weekends: weekendCount,
+                holidays: holidayCount,
+                leaveDays: leaveDaysCount,
+                presentDays,
+                lateDays,
+                halfDays,
+                absentDays,
+                wfhDays,
+                totalHours: Math.round(totalHours * 10) / 10,
+                averageHours: presentDays > 0 ? Math.round(totalHours / presentDays * 10) / 10 : 0,
+                attendancePercentage
+            },
+            dailyRecords,
+            leaves: approvedLeaves.map(l => ({
+                type: l.type,
+                startDate: l.startDate,
+                endDate: l.endDate
+            })),
+            holidayList: holidays.map(h => ({
+                name: h.name,
+                date: h.date,
+                type: h.type
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching attendance summary:', error);
+        res.status(500).json({ error: 'Failed to fetch attendance summary' });
     }
 });
 
@@ -1534,7 +1789,7 @@ router.post('/regularizations', async (req, res) => {
 router.put('/regularizations/:id', async (req, res) => {
     try {
         const regularization = await RegularizationRequest.findByPk(req.params.id, {
-            include: [{ model: Employee, attributes: ['id', 'managerId'] }]
+            include: [{ model: Employee, attributes: ['id', 'name', 'managerId'] }]
         });
         if (!regularization) {
             return res.status(404).json({ error: 'Regularization request not found' });
@@ -1546,20 +1801,100 @@ router.put('/regularizations/:id', async (req, res) => {
         const isOwnRequest = regularization.employeeId === userId;
         const isManagerOfEmployee = regularization.Employee?.managerId === userId;
 
-        const { status, ...otherUpdates } = req.body;
+        const { status, approverComments, ...otherUpdates } = req.body;
 
         // Status changes require Manager/HR/Admin
         if (status && status !== regularization.status) {
+            // Can only change from Pending status (or HR/Admin can override)
+            if (regularization.status !== 'Pending' && !isHROrAdmin) {
+                return res.status(400).json({ error: 'Can only approve/reject pending requests' });
+            }
+
             if (!isHROrAdmin && !isManagerOfEmployee) {
                 return res.status(403).json({ error: 'Only managers or HR can approve/reject regularization requests' });
             }
             if (isOwnRequest && !isHROrAdmin) {
                 return res.status(403).json({ error: 'You cannot approve your own regularization request' });
             }
+
+            // Validate status
+            const validStatuses = ['Approved', 'Rejected'];
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+            }
         }
 
-        await regularization.update(req.body);
-        res.json(regularization);
+        // Build update data
+        const updateData = { ...req.body };
+
+        // Track approval details if status is changing
+        if (status && ['Approved', 'Rejected'].includes(status) && status !== regularization.status) {
+            updateData.approvedBy = userId;
+            updateData.approvedOn = new Date().toISOString().split('T')[0];
+            if (approverComments) {
+                updateData.approverComments = approverComments;
+            }
+
+            // If approved, update the attendance record
+            if (status === 'Approved' && (regularization.newCheckIn || regularization.newCheckOut)) {
+                const attendanceRecord = await AttendanceRecord.findOne({
+                    where: {
+                        employeeId: regularization.employeeId,
+                        date: regularization.date
+                    }
+                });
+
+                if (attendanceRecord) {
+                    const attendanceUpdate = {};
+                    if (regularization.newCheckIn) {
+                        attendanceUpdate.checkIn = regularization.newCheckIn;
+                    }
+                    if (regularization.newCheckOut) {
+                        attendanceUpdate.checkOut = regularization.newCheckOut;
+                    }
+
+                    // Recalculate duration if both times are now available
+                    const checkIn = regularization.newCheckIn || attendanceRecord.checkIn;
+                    const checkOut = regularization.newCheckOut || attendanceRecord.checkOut;
+
+                    if (checkIn && checkOut) {
+                        const [inH, inM] = checkIn.split(':').map(Number);
+                        const [outH, outM] = checkOut.split(':').map(Number);
+                        const durationMinutes = (outH * 60 + outM) - (inH * 60 + inM);
+                        attendanceUpdate.durationHours = Math.round(durationMinutes / 60 * 10) / 10;
+
+                        // Update status based on duration
+                        if (durationMinutes / 60 < 4) {
+                            attendanceUpdate.status = 'Half Day';
+                        } else {
+                            attendanceUpdate.status = 'Present';
+                        }
+                    }
+
+                    await attendanceRecord.update(attendanceUpdate);
+                } else {
+                    // Create attendance record if it doesn't exist
+                    await AttendanceRecord.create({
+                        id: uuidv4(),
+                        employeeId: regularization.employeeId,
+                        date: regularization.date,
+                        checkIn: regularization.newCheckIn,
+                        checkOut: regularization.newCheckOut,
+                        status: regularization.type === 'Work From Home' ? 'WFH' : 'Present',
+                        durationHours: null
+                    });
+                }
+            }
+        }
+
+        await regularization.update(updateData);
+
+        // Fetch updated record
+        const updatedRegularization = await RegularizationRequest.findByPk(req.params.id, {
+            include: [{ model: Employee, attributes: ['id', 'name', 'email', 'managerId'] }]
+        });
+
+        res.json(updatedRegularization);
     } catch (error) {
         console.error('Error updating regularization request:', error);
         res.status(500).json({ error: 'Failed to update regularization request' });

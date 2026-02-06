@@ -319,7 +319,11 @@ const RegularizationRequest = sequelize.define('RegularizationRequest', {
     status: { type: DataTypes.STRING, defaultValue: 'Pending' }, // 'Pending', 'Approved', 'Rejected'
     appliedOn: { type: DataTypes.STRING, allowNull: false },
     newCheckIn: { type: DataTypes.STRING },
-    newCheckOut: { type: DataTypes.STRING }
+    newCheckOut: { type: DataTypes.STRING },
+    // Approval tracking
+    approvedBy: { type: DataTypes.STRING }, // Employee ID of approver
+    approvedOn: { type: DataTypes.STRING }, // Date of approval/rejection
+    approverComments: { type: DataTypes.TEXT } // Comments from approver
 });
 
 const Payslip = sequelize.define('Payslip', {
@@ -458,6 +462,21 @@ const LeaveType = sequelize.define('LeaveType', {
     maxDays: { type: DataTypes.INTEGER },
     isPaid: { type: DataTypes.BOOLEAN, defaultValue: true },
     requiresApproval: { type: DataTypes.BOOLEAN, defaultValue: true },
+    isActive: { type: DataTypes.BOOLEAN, defaultValue: true }
+});
+
+// Shift Timing Configuration for attendance tracking
+const ShiftTiming = sequelize.define('ShiftTiming', {
+    id: { type: DataTypes.STRING, primaryKey: true },
+    name: { type: DataTypes.STRING, allowNull: false, unique: true }, // 'General Shift', 'Night Shift', etc.
+    code: { type: DataTypes.STRING },
+    startTime: { type: DataTypes.STRING, allowNull: false }, // HH:mm format (e.g., '09:00')
+    endTime: { type: DataTypes.STRING, allowNull: false }, // HH:mm format (e.g., '18:00')
+    graceMinutes: { type: DataTypes.INTEGER, defaultValue: 15 }, // Grace period for late marking
+    halfDayHours: { type: DataTypes.FLOAT, defaultValue: 4 }, // Hours for half day
+    fullDayHours: { type: DataTypes.FLOAT, defaultValue: 8 }, // Hours for full day
+    isFlexible: { type: DataTypes.BOOLEAN, defaultValue: false }, // Flexible timing
+    isDefault: { type: DataTypes.BOOLEAN, defaultValue: false }, // Default shift
     isActive: { type: DataTypes.BOOLEAN, defaultValue: true }
 });
 
@@ -738,6 +757,7 @@ export {
     EmployeeType,
     Holiday,
     LeaveType,
+    ShiftTiming,
     WorkLocation,
     ProfessionalTaxSlab,
     Skill,
