@@ -2,6 +2,7 @@ import express from 'express';
 import { Op } from 'sequelize';
 import bcrypt from 'bcrypt';
 import {
+    sequelize,
     Employee,
     EmployeeHiringHistory,
     LeaveRequest,
@@ -396,24 +397,31 @@ router.put('/employees/:id', async (req, res) => {
 });
 
 // Delete employee / Terminate (HR/Admin only, soft delete - set status to 'Terminated')
+// Uses transaction to ensure data consistency
 router.delete('/employees/:id', requireHRMSRole(RoleGroups.FULL_ACCESS), async (req, res) => {
+    const t = await sequelize.transaction();
+
     try {
-        const employee = await Employee.findByPk(req.params.id);
+        const employee = await Employee.findByPk(req.params.id, { transaction: t });
         if (!employee) {
+            await t.rollback();
             return res.status(404).json({ error: 'Employee not found' });
         }
 
         // Prevent terminating yourself
         if (employee.id === req.user.id) {
+            await t.rollback();
             return res.status(400).json({ error: 'Cannot terminate your own account' });
         }
 
-        // Create hiring history record before termination
+        const terminationDate = new Date().toISOString().split('T')[0];
+
+        // Create hiring history record before termination (within transaction)
         await EmployeeHiringHistory.create({
             id: uuidv4(),
             employeeId: employee.id,
             hireDate: employee.joinDate,
-            terminationDate: new Date().toISOString().split('T')[0],
+            terminationDate: terminationDate,
             employeeType: employee.employeeType,
             department: employee.department,
             employeePosition: employee.employeePosition,
@@ -422,14 +430,22 @@ router.delete('/employees/:id', requireHRMSRole(RoleGroups.FULL_ACCESS), async (
             managerId: employee.managerId,
             reasonForTermination: req.body.reasonForTermination || 'Not specified',
             isRehire: false
-        });
+        }, { transaction: t });
 
+        // Update employee status (within transaction)
         await employee.update({
             status: 'Terminated',
-            terminationDate: new Date().toISOString().split('T')[0]
-        });
+            terminationDate: terminationDate,
+            lastWorkingDay: terminationDate
+        }, { transaction: t });
+
+        // Commit the transaction
+        await t.commit();
+
         res.json({ message: 'Employee terminated successfully' });
     } catch (error) {
+        // Rollback on any error
+        await t.rollback();
         console.error('Error terminating employee:', error);
         res.status(500).json({ error: 'Failed to terminate employee' });
     }
@@ -1262,27 +1278,38 @@ router.get('/payslips/:id', async (req, res) => {
     }
 });
 
-// Generate payslip with automatic calculations
-router.post('/payslips/generate', async (req, res) => {
+// Generate payslip with automatic calculations (Payroll Access only)
+// Uses transaction with locking to prevent race conditions
+router.post('/payslips/generate', requireHRMSRole(RoleGroups.PAYROLL_ACCESS), async (req, res) => {
+    const t = await sequelize.transaction();
+
     try {
         const { employeeId, month } = req.body; // month format: YYYY-MM
 
         if (!employeeId || !month) {
+            await t.rollback();
             return res.status(400).json({ error: 'Employee ID and month are required' });
         }
 
-        // Get employee
-        const employee = await Employee.findByPk(employeeId);
+        // Get employee with lock to prevent concurrent modifications
+        const employee = await Employee.findByPk(employeeId, {
+            transaction: t,
+            lock: t.LOCK.UPDATE
+        });
         if (!employee) {
+            await t.rollback();
             return res.status(404).json({ error: 'Employee not found' });
         }
 
-        // Check if payslip already exists for this month
+        // Check if payslip already exists for this month (with lock)
         const existingPayslip = await Payslip.findOne({
-            where: { employeeId, month }
+            where: { employeeId, month },
+            transaction: t,
+            lock: t.LOCK.UPDATE
         });
 
         if (existingPayslip) {
+            await t.rollback();
             return res.status(400).json({ error: 'Payslip already exists for this month' });
         }
 
@@ -1361,7 +1388,7 @@ router.post('/payslips/generate', async (req, res) => {
         // Net pay
         const netPay = Math.round(grossSalary - totalDeductions);
 
-        // Create payslip
+        // Create payslip (within transaction)
         const payslip = await Payslip.create({
             id: uuidv4(),
             employeeId,
@@ -1372,7 +1399,10 @@ router.post('/payslips/generate', async (req, res) => {
             deductions: totalDeductions,
             netPay,
             generatedDate: new Date().toISOString().split('T')[0]
-        });
+        }, { transaction: t });
+
+        // Commit the transaction
+        await t.commit();
 
         // Return detailed payslip with breakdown
         res.status(201).json({
@@ -1405,14 +1435,26 @@ router.post('/payslips/generate', async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        // Rollback on any error
+        await t.rollback();
+        console.error('Error generating payslip:', error);
+        res.status(500).json({ error: 'Failed to generate payslip' });
     }
 });
 
-// Create payslip (manual)
-router.post('/payslips', async (req, res) => {
+// Create payslip (manual - Payroll Access only)
+router.post('/payslips', requireHRMSRole(RoleGroups.PAYROLL_ACCESS), async (req, res) => {
     try {
         const { employeeId, month, basic, hra, allowances, deductions, netPay } = req.body;
+
+        // Check for duplicate
+        const existingPayslip = await Payslip.findOne({
+            where: { employeeId, month }
+        });
+
+        if (existingPayslip) {
+            return res.status(400).json({ error: 'Payslip already exists for this month' });
+        }
 
         const payslip = await Payslip.create({
             id: uuidv4(),
@@ -1428,12 +1470,13 @@ router.post('/payslips', async (req, res) => {
 
         res.status(201).json(payslip);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error creating payslip:', error);
+        res.status(500).json({ error: 'Failed to create payslip' });
     }
 });
 
-// Update payslip
-router.put('/payslips/:id', async (req, res) => {
+// Update payslip (Payroll Access only)
+router.put('/payslips/:id', requireHRMSRole(RoleGroups.PAYROLL_ACCESS), async (req, res) => {
     try {
         const payslip = await Payslip.findByPk(req.params.id);
         if (!payslip) {
@@ -1443,7 +1486,8 @@ router.put('/payslips/:id', async (req, res) => {
         await payslip.update(req.body);
         res.json(payslip);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error updating payslip:', error);
+        res.status(500).json({ error: 'Failed to update payslip' });
     }
 });
 
